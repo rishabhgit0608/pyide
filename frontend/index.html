@@ -381,11 +381,7 @@
 </div>
 
 <script type="module">
-  import { basicSetup } from "https://esm.sh/codemirror@6";
-  import { EditorView, keymap } from "https://esm.sh/@codemirror/view@6";
-  import { indentWithTab } from "https://esm.sh/@codemirror/commands@6";
-  import { python } from "https://esm.sh/@codemirror/lang-python@6";
-  import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark@6";
+  import { EditorView, keymap, EditorState, indentWithTab, basicSetup, python, oneDark } from "./codemirror-bundle.js";
 
   const API = "http://localhost:8000";
 
