@@ -96,11 +96,11 @@
     }
 
     #gate-card h2 {
-      font-size: 22px;
-      font-weight: 800;
+      font-size: 17px;
+      font-weight: 700;
       color: var(--text);
       margin-bottom: 6px;
-      letter-spacing: -0.02em;
+      letter-spacing: -0.01em;
     }
     #gate-card p {
       font-size: 13px;
@@ -421,8 +421,31 @@
       overflow: hidden;
       position: relative;
     }
-    .cm-editor { position: absolute; inset: 0; font-size: 13px; }
-    .cm-scroller { overflow: auto; }
+    .cm-editor { height: 100%; font-size: 13px; }
+    .cm-scroller { overflow: auto !important; height: 100%; }
+
+    /* Remote collaborator cursors */
+    .remote-cursor {
+      position: absolute;
+      width: 2px;
+      border-radius: 1px;
+      pointer-events: none;
+      z-index: 10;
+      transition: left 0.08s, top 0.08s;
+    }
+    .remote-cursor-label {
+      position: absolute;
+      top: -16px;
+      left: 3px;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 3px;
+      white-space: nowrap;
+      font-family: "Syne", sans-serif;
+      color: var(--bg);
+      opacity: 0.92;
+    }
 
     #stdin-section {
       flex-shrink: 0;
@@ -906,6 +929,7 @@
   let suppressSync   = false;
   let codeTimer      = null;
   let stdinTimer     = null;
+  const remoteCursors = new Map(); // email -> { line, col, timer }
 
   // ─── Editor ───────────────────────────────────────────────
   const editor = new EditorView({
@@ -919,14 +943,28 @@
         ".cm-scroller": { fontFamily: '"JetBrains Mono","Fira Code",monospace' },
       }),
       EditorView.updateListener.of((update) => {
-        if (!update.docChanged || !isInSession || suppressSync) return;
-        clearTimeout(codeTimer);
-        codeTimer = setTimeout(() => {
-          wsSend({ type: "code_change", code: getCode(), email: currentEmail });
-        }, 300);
+        if (!isInSession || suppressSync) return;
+        if (update.docChanged) {
+          clearTimeout(codeTimer);
+          codeTimer = setTimeout(() => {
+            wsSend({ type: "code_change", code: getCode(), email: currentEmail });
+          }, 300);
+        }
+        if (update.selectionSet) {
+          const head = update.state.selection.main.head;
+          const line = update.state.doc.lineAt(head);
+          wsSend({ type: "cursor", line: line.number, col: head - line.from, email: currentEmail });
+        }
       }),
     ],
     parent: document.getElementById("editor-wrapper"),
+  });
+
+  // Re-position remote cursors when editor scrolls
+  editor.scrollDOM.addEventListener("scroll", () => {
+    for (const [email, { line, col }] of remoteCursors.entries()) {
+      renderRemoteCursor(email, line, col);
+    }
   });
 
   // ─── DOM refs ─────────────────────────────────────────────
@@ -994,6 +1032,60 @@
   }
   function memberColor(idx) { return MEMBER_COLORS[idx % MEMBER_COLORS.length]; }
   function initials(email)  { return (email || "?")[0].toUpperCase(); }
+
+  // ─── Remote cursors ───────────────────────────────────────
+  function lineColToOffset(line, col) {
+    const doc = editor.state.doc;
+    if (line < 1 || line > doc.lines) return 0;
+    const lineObj = doc.line(line);
+    return lineObj.from + Math.min(col, lineObj.length);
+  }
+
+  function renderRemoteCursor(email, line, col) {
+    const idx    = sessionMembers.indexOf(email);
+    const color  = memberColor(idx >= 0 ? idx : 0);
+    const pos    = lineColToOffset(line, col);
+    const coords = editor.coordsAtPos(pos);
+    if (!coords) return;
+
+    const wrapper = document.getElementById("editor-wrapper");
+    const wRect   = wrapper.getBoundingClientRect();
+    const cursorId = "rc-" + email.replace(/[^a-z0-9]/gi, "_");
+
+    let el = document.getElementById(cursorId);
+    if (!el) {
+      el = document.createElement("div");
+      el.id        = cursorId;
+      el.className = "remote-cursor";
+      const label  = document.createElement("div");
+      label.className = "remote-cursor-label";
+      label.textContent = email.split("@")[0];
+      el.appendChild(label);
+      wrapper.appendChild(el);
+    }
+    el.style.left       = (coords.left - wRect.left) + "px";
+    el.style.top        = (coords.top  - wRect.top)  + "px";
+    el.style.height     = (coords.bottom - coords.top) + "px";
+    el.style.background = color;
+    el.querySelector(".remote-cursor-label").style.background = color;
+
+    const prev = remoteCursors.get(email);
+    if (prev?.timer) clearTimeout(prev.timer);
+    const timer = setTimeout(() => removeRemoteCursor(email), 8000);
+    remoteCursors.set(email, { line, col, timer });
+  }
+
+  function removeRemoteCursor(email) {
+    const id = "rc-" + email.replace(/[^a-z0-9]/gi, "_");
+    document.getElementById(id)?.remove();
+    const prev = remoteCursors.get(email);
+    if (prev?.timer) clearTimeout(prev.timer);
+    remoteCursors.delete(email);
+  }
+
+  function clearAllRemoteCursors() {
+    for (const email of [...remoteCursors.keys()]) removeRemoteCursor(email);
+  }
 
   // ─── Email Gate ───────────────────────────────────────────
   function unlockUI(email) {
@@ -1344,6 +1436,7 @@
 
   leaveSessionBtn.addEventListener("click", () => {
     if (!confirm("Leave the session?")) return;
+    clearAllRemoteCursors();
     isInSession = false;
     sessionBadge.classList.remove("show");
     leaveSessionBtn.style.display = "none";
@@ -1424,6 +1517,9 @@
       }
 
       case "cursor": {
+        if (msg.email !== currentEmail) {
+          renderRemoteCursor(msg.email, msg.line, msg.col);
+        }
         const idx = sessionMembers.indexOf(msg.email);
         const av  = memberAvatars.children[idx];
         if (av) {
@@ -1436,10 +1532,12 @@
       case "member_disconnected": {
         const pill = lobbyMembersEl.querySelector(`[data-email="${msg.email}"]`);
         if (pill) pill.classList.remove("online");
+        removeRemoteCursor(msg.email);
         break;
       }
 
       case "session_ended": {
+        clearAllRemoteCursors();
         isInSession = false;
         ws = null;
         lobbyOverlay.classList.remove("show");
