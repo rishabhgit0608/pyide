@@ -1,5 +1,6 @@
 import asyncio
 import os
+import pathlib
 import re
 import tempfile
 from contextlib import asynccontextmanager
@@ -8,6 +9,7 @@ from datetime import datetime, timezone
 from bson import ObjectId
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pymongo import ReturnDocument
 
 from database import get_db
@@ -148,3 +150,8 @@ async def delete_document(doc_id: str, db=Depends(get_db)):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Document not found")
     return {"deleted": True}
+
+
+_frontend = pathlib.Path(__file__).parent.parent / "frontend"
+if _frontend.exists():
+    app.mount("/", StaticFiles(directory=_frontend, html=True), name="frontend")

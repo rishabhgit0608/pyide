@@ -383,7 +383,7 @@
 <script type="module">
   import { EditorView, keymap, EditorState, indentWithTab, basicSetup, python, oneDark } from "./codemirror-bundle.js";
 
-  const API = "http://localhost:8000";
+  const API = window.location.port === "3000" ? "http://localhost:8000" : "";
 
   let currentEmail = "";
   let currentDocId = null;
