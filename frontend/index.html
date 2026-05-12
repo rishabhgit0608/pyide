@@ -273,7 +273,7 @@
     #save-btn { background: var(--accent); color: #fff; }
     #new-doc-btn { background: var(--border2); color: var(--text); }
     #share-btn { background: var(--accent2); color: var(--bg); }
-    #leave-session-btn { background: var(--red); color: #fff; }
+    #leave-session-btn { background: var(--red); color: #fff; display: none; }
 
     /* Member avatar popover (owner kick UI) */
     #member-avatars { position: relative; }
@@ -1481,6 +1481,7 @@
   // ─── Lobby ────────────────────────────────────────────────
   async function openLobby(sid) {
     sessionId = sid;
+    leaveSessionBtn.style.display = "none"; // never show Leave during lobby
     lobbyOverlay.classList.add("show");
 
     if (!currentEmail) {
@@ -1744,6 +1745,10 @@
   function kickMember(email) {
     if (!confirm(`Kick ${email} from the session?`)) return;
     wsSend({ type: "kick_member", email });
+    // Optimistic update — remove immediately without waiting for lobby_update
+    sessionMembers = sessionMembers.filter(m => m !== email);
+    renderLobbyMembers(sessionMembers);
+    if (isInSession) renderSessionBadge();
   }
 
   const kickedOv = document.getElementById("kicked-overlay");
