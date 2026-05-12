@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PyIDE</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #1e1e2e;
+      color: #cdd6f4;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #topbar {
+      background: #181825;
+      border-bottom: 1px solid #313244;
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    #topbar .logo {
+      font-size: 18px;
+      font-weight: 700;
+      color: #89b4fa;
+      letter-spacing: -0.5px;
+      margin-right: 8px;
+    }
+
+    #email-input {
+      flex: 1;
+      max-width: 280px;
+      background: #313244;
+      border: 1px solid #45475a;
+      border-radius: 6px;
+      color: #cdd6f4;
+      padding: 6px 10px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #email-input:focus { border-color: #89b4fa; }
+    #email-input.error { border-color: #f38ba8; }
+
+    #email-error {
+      font-size: 12px;
+      color: #f38ba8;
+      display: none;
+    }
+
+    button {
+      padding: 6px 14px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.85; }
+    button:active { opacity: 0.7; }
+
+    #run-btn { background: #a6e3a1; color: #1e1e2e; }
+    #save-btn { background: #89b4fa; color: #1e1e2e; }
+    #new-doc-btn { background: #585b70; color: #cdd6f4; }
+
+    #main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    #sidebar {
+      width: 240px;
+      background: #181825;
+      border-right: 1px solid #313244;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    #sidebar-header {
+      padding: 10px 12px;
+      border-bottom: 1px solid #313244;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    #sidebar-header span {
+      font-size: 12px;
+      font-weight: 600;
+      color: #a6adc8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    #doc-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 0;
+    }
+
+    #doc-list::-webkit-scrollbar { width: 4px; }
+    #doc-list::-webkit-scrollbar-track { background: transparent; }
+    #doc-list::-webkit-scrollbar-thumb { background: #45475a; border-radius: 2px; }
+
+    .doc-card {
+      padding: 8px 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border-left: 2px solid transparent;
+      transition: background 0.1s;
+    }
+    .doc-card:hover { background: #313244; }
+    .doc-card.active { background: #313244; border-left-color: #89b4fa; }
+
+    .doc-card .doc-info { flex: 1; min-width: 0; }
+    .doc-card .doc-title {
+      font-size: 13px;
+      color: #cdd6f4;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .doc-card .doc-date { font-size: 11px; color: #6c7086; margin-top: 1px; }
+
+    .doc-card .delete-btn {
+      background: transparent;
+      color: #f38ba8;
+      padding: 2px 6px;
+      font-size: 14px;
+      border-radius: 4px;
+      opacity: 0;
+      transition: opacity 0.1s;
+    }
+    .doc-card:hover .delete-btn { opacity: 1; }
+    .doc-card .delete-btn:hover { background: #3d1b22; opacity: 1; }
+
+    #sidebar-empty {
+      padding: 20px 12px;
+      text-align: center;
+      font-size: 12px;
+      color: #6c7086;
+    }
+
+    #editor-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #doc-title-bar {
+      background: #1e1e2e;
+      border-bottom: 1px solid #313244;
+      padding: 6px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    #doc-title-input {
+      background: transparent;
+      border: none;
+      color: #cdd6f4;
+      font-size: 14px;
+      font-weight: 500;
+      outline: none;
+      flex: 1;
+    }
+    #doc-title-input::placeholder { color: #45475a; }
+
+    #panes {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    #editor-pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-right: 1px solid #313244;
+    }
+
+    #editor-label, #stdin-label, #output-label {
+      padding: 4px 12px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #6c7086;
+      background: #181825;
+      border-bottom: 1px solid #313244;
+      flex-shrink: 0;
+    }
+
+    #editor-wrapper { flex: 1; overflow: auto; }
+
+    .cm-editor { height: 100%; font-size: 14px; }
+    .cm-scroller { overflow: auto; }
+
+    #stdin-section {
+      flex-shrink: 0;
+      border-top: 1px solid #313244;
+      display: flex;
+      flex-direction: column;
+      max-height: 120px;
+    }
+
+    #stdin-input {
+      flex: 1;
+      background: #181825;
+      color: #cdd6f4;
+      border: none;
+      padding: 8px 12px;
+      font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+      font-size: 13px;
+      resize: none;
+      outline: none;
+    }
+
+    #output-pane {
+      width: 40%;
+      min-width: 240px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #output-content {
+      flex: 1;
+      background: #11111b;
+      padding: 12px;
+      overflow-y: auto;
+      font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    #output-content::-webkit-scrollbar { width: 4px; }
+    #output-content::-webkit-scrollbar-thumb { background: #313244; border-radius: 2px; }
+
+    .out-stdout { color: #cdd6f4; }
+    .out-stderr { color: #f38ba8; }
+    .out-exit { color: #6c7086; font-style: italic; }
+    .out-timeout { color: #fab387; }
+    .out-placeholder { color: #45475a; font-style: italic; }
+
+    #statusbar {
+      background: #181825;
+      border-top: 1px solid #313244;
+      padding: 3px 16px;
+      font-size: 11px;
+      color: #6c7086;
+      flex-shrink: 0;
+    }
+
+    .running #run-btn { opacity: 0.5; pointer-events: none; }
+    .running #run-btn::after { content: "..."; }
+
+    #modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    #modal-overlay.show { display: flex; }
+
+    #modal {
+      background: #1e1e2e;
+      border: 1px solid #45475a;
+      border-radius: 10px;
+      padding: 24px;
+      width: 360px;
+    }
+    #modal h3 { margin-bottom: 14px; font-size: 16px; }
+    #modal input {
+      width: 100%;
+      background: #313244;
+      border: 1px solid #45475a;
+      border-radius: 6px;
+      color: #cdd6f4;
+      padding: 8px 10px;
+      font-size: 14px;
+      outline: none;
+      margin-bottom: 16px;
+    }
+    #modal input:focus { border-color: #89b4fa; }
+    #modal .modal-btns { display: flex; gap: 8px; justify-content: flex-end; }
+    #modal .cancel-btn { background: #313244; color: #cdd6f4; }
+    #modal .confirm-btn { background: #89b4fa; color: #1e1e2e; }
+  </style>
+</head>
+<body>
+
+<div id="topbar">
+  <span class="logo">PyIDE</span>
+  <input id="email-input" type="email" placeholder="your@email.com" autocomplete="email" />
+  <span id="email-error">Invalid email</span>
+  <button id="new-doc-btn">New</button>
+  <button id="run-btn">&#9654; Run</button>
+  <button id="save-btn">&#128190; Save</button>
+</div>
+
+<div id="main">
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <span>My Documents</span>
+    </div>
+    <div id="doc-list">
+      <div id="sidebar-empty">Enter email to load documents</div>
+    </div>
+  </div>
+
+  <div id="editor-area">
+    <div id="doc-title-bar">
+      <input id="doc-title-input" type="text" placeholder="Untitled" maxlength="120" />
+    </div>
+    <div id="panes">
+      <div id="editor-pane">
+        <div id="editor-label">Code</div>
+        <div id="editor-wrapper"></div>
+        <div id="stdin-section">
+          <div id="stdin-label">Stdin (one line per input)</div>
+          <textarea id="stdin-input" placeholder="Enter program input here..."></textarea>
+        </div>
+      </div>
+
+      <div id="output-pane">
+        <div id="output-label">Output</div>
+        <div id="output-content">
+          <span class="out-placeholder">Run your code to see output here.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="statusbar">Ready</div>
+
+<div id="modal-overlay">
+  <div id="modal">
+    <h3>Save Document</h3>
+    <input id="modal-title-input" type="text" placeholder="Enter a title..." maxlength="120" />
+    <div class="modal-btns">
+      <button class="cancel-btn" id="modal-cancel">Cancel</button>
+      <button class="confirm-btn" id="modal-confirm">Save</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { EditorView, basicSetup } from "https://esm.sh/codemirror@6";
+  import { python } from "https://esm.sh/@codemirror/lang-python@6";
+  import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark@6";
+  import { keymap } from "https://esm.sh/@codemirror/view@6";
+  import { indentWithTab } from "https://esm.sh/@codemirror/commands@6";
+  import { EditorState } from "https://esm.sh/@codemirror/state@6";
+
+  const API = "http://localhost:8000";
+
+  let currentEmail = "";
+  let currentDocId = null;
+  let documentList = [];
+
+  const STARTER_CODE = `# Welcome to PyIDE
+name = input("Enter your name: ")
+print(f"Hello, {name}!")
+`;
+
+  const editor = new EditorView({
+    state: EditorState.create({
+      doc: STARTER_CODE,
+      extensions: [
+        basicSetup,
+        python(),
+        oneDark,
+        keymap.of([indentWithTab]),
+        EditorView.theme({
+          "&": { height: "100%" },
+          ".cm-scroller": { overflow: "auto", fontFamily: '"JetBrains Mono","Fira Code","Cascadia Code",monospace' },
+        }),
+      ],
+    }),
+    parent: document.getElementById("editor-wrapper"),
+  });
+
+  const emailInput = document.getElementById("email-input");
+  const emailError = document.getElementById("email-error");
+  const runBtn = document.getElementById("run-btn");
+  const saveBtn = document.getElementById("save-btn");
+  const newDocBtn = document.getElementById("new-doc-btn");
+  const docList = document.getElementById("doc-list");
+  const outputContent = document.getElementById("output-content");
+  const stdinInput = document.getElementById("stdin-input");
+  const statusbar = document.getElementById("statusbar");
+  const docTitleInput = document.getElementById("doc-title-input");
+  const modalOverlay = document.getElementById("modal-overlay");
+  const modalTitleInput = document.getElementById("modal-title-input");
+  const modalConfirm = document.getElementById("modal-confirm");
+  const modalCancel = document.getElementById("modal-cancel");
+
+  function isValidEmail(email) {
+    return /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(email);
+  }
+
+  function setStatus(msg) { statusbar.textContent = msg; }
+
+  function formatDate(isoStr) {
+    try {
+      const d = new Date(isoStr);
+      return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
+        " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    } catch { return ""; }
+  }
+
+  function getCode() { return editor.state.doc.toString(); }
+
+  function setCode(code) {
+    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: code } });
+  }
+
+  function escHtml(str) {
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function renderDocList() {
+    if (documentList.length === 0) {
+      docList.innerHTML = '<div id="sidebar-empty">' +
+        (currentEmail ? "No documents yet. Click Save to create one." : "Enter email to load documents") +
+        "</div>";
+      return;
+    }
+    docList.innerHTML = "";
+    for (const doc of documentList) {
+      const card = document.createElement("div");
+      card.className = "doc-card" + (doc.id === currentDocId ? " active" : "");
+      card.dataset.id = doc.id;
+      card.innerHTML = `
+        <div class="doc-info">
+          <div class="doc-title">${escHtml(doc.title)}</div>
+          <div class="doc-date">${formatDate(doc.updated_at)}</div>
+        </div>
+        <button class="delete-btn" title="Delete" data-id="${doc.id}">✕</button>
+      `;
+      card.addEventListener("click", (e) => {
+        if (e.target.classList.contains("delete-btn")) return;
+        loadDocument(doc);
+      });
+      card.querySelector(".delete-btn").addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteDocument(doc.id);
+      });
+      docList.appendChild(card);
+    }
+  }
+
+  async function fetchDocuments(email) {
+    try {
+      const resp = await fetch(`${API}/documents/${encodeURIComponent(email)}`);
+      if (!resp.ok) throw new Error("fetch failed");
+      documentList = await resp.json();
+      renderDocList();
+    } catch (err) {
+      setStatus("Error loading documents: " + err.message);
+    }
+  }
+
+  async function createDocument(email, title, code, stdin) {
+    const resp = await fetch(`${API}/documents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, title, code, stdin }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.detail || "Save failed");
+    }
+    return resp.json();
+  }
+
+  async function updateDocument(docId, title, code, stdin) {
+    const resp = await fetch(`${API}/documents/${docId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, code, stdin }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.detail || "Update failed");
+    }
+    return resp.json();
+  }
+
+  async function deleteDocument(docId) {
+    if (!confirm("Delete this document?")) return;
+    try {
+      const resp = await fetch(`${API}/documents/${docId}`, { method: "DELETE" });
+      if (!resp.ok) throw new Error("Delete failed");
+      if (currentDocId === docId) newDocument();
+      await fetchDocuments(currentEmail);
+      setStatus("Document deleted.");
+    } catch (err) {
+      setStatus("Error: " + err.message);
+    }
+  }
+
+  function loadDocument(doc) {
+    currentDocId = doc.id;
+    docTitleInput.value = doc.title;
+    setCode(doc.code);
+    stdinInput.value = doc.stdin || "";
+    renderDocList();
+    setStatus(`Loaded: ${doc.title}`);
+  }
+
+  function newDocument() {
+    currentDocId = null;
+    docTitleInput.value = "";
+    setCode(STARTER_CODE);
+    stdinInput.value = "";
+    renderDocList();
+    setStatus("New document");
+  }
+
+  async function runCode() {
+    const code = getCode();
+    const stdin = stdinInput.value;
+    outputContent.innerHTML = '<span class="out-placeholder">Running...</span>';
+    document.body.classList.add("running");
+    setStatus("Running...");
+    try {
+      const resp = await fetch(`${API}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, stdin }),
+      });
+      const data = await resp.json();
+      renderOutput(data);
+      setStatus(`Done — exit code ${data.exit_code}${data.timed_out ? " (timed out)" : ""}`);
+    } catch (err) {
+      outputContent.innerHTML = `<span class="out-stderr">Error: ${escHtml(err.message)}</span>`;
+      setStatus("Run failed");
+    } finally {
+      document.body.classList.remove("running");
+    }
+  }
+
+  function renderOutput(data) {
+    outputContent.innerHTML = "";
+    if (data.timed_out) {
+      outputContent.innerHTML += `<span class="out-timeout">⏱ Process timed out after 10 seconds\n</span>`;
+    }
+    if (data.stdout) {
+      const el = document.createElement("span");
+      el.className = "out-stdout";
+      el.textContent = data.stdout;
+      outputContent.appendChild(el);
+    }
+    if (data.stderr) {
+      const el = document.createElement("span");
+      el.className = "out-stderr";
+      el.textContent = data.stderr;
+      outputContent.appendChild(el);
+    }
+    const exitEl = document.createElement("span");
+    exitEl.className = "out-exit";
+    exitEl.textContent = `\n─── exit code: ${data.exit_code} ───`;
+    outputContent.appendChild(exitEl);
+    outputContent.scrollTop = outputContent.scrollHeight;
+  }
+
+  async function saveDocument() {
+    if (!currentEmail) {
+      emailInput.focus();
+      emailInput.classList.add("error");
+      emailError.style.display = "inline";
+      emailError.textContent = "Enter your email first";
+      return;
+    }
+    if (!isValidEmail(currentEmail)) {
+      emailInput.classList.add("error");
+      emailError.style.display = "inline";
+      emailError.textContent = "Invalid email";
+      return;
+    }
+
+    const code = getCode();
+    const stdin = stdinInput.value;
+    const title = docTitleInput.value.trim() || "";
+
+    if (currentDocId) {
+      try {
+        const updated = await updateDocument(currentDocId, title || "Untitled", code, stdin);
+        documentList = documentList.map(d => d.id === currentDocId ? updated : d);
+        renderDocList();
+        setStatus(`Saved: ${updated.title}`);
+      } catch (err) {
+        setStatus("Save error: " + err.message);
+      }
+    } else {
+      if (!title) {
+        openSaveModal(async (resolvedTitle) => {
+          try {
+            docTitleInput.value = resolvedTitle;
+            const doc = await createDocument(currentEmail, resolvedTitle, code, stdin);
+            currentDocId = doc.id;
+            await fetchDocuments(currentEmail);
+            setStatus(`Saved: ${doc.title}`);
+          } catch (err) {
+            setStatus("Save error: " + err.message);
+          }
+        });
+        return;
+      }
+      try {
+        const doc = await createDocument(currentEmail, title, code, stdin);
+        currentDocId = doc.id;
+        await fetchDocuments(currentEmail);
+        setStatus(`Saved: ${doc.title}`);
+      } catch (err) {
+        setStatus("Save error: " + err.message);
+      }
+    }
+  }
+
+  let _modalCallback = null;
+
+  function openSaveModal(callback) {
+    _modalCallback = callback;
+    modalTitleInput.value = "";
+    modalOverlay.classList.add("show");
+    setTimeout(() => modalTitleInput.focus(), 50);
+  }
+
+  modalConfirm.addEventListener("click", () => {
+    const title = modalTitleInput.value.trim() || "Untitled";
+    modalOverlay.classList.remove("show");
+    if (_modalCallback) _modalCallback(title);
+    _modalCallback = null;
+  });
+
+  modalCancel.addEventListener("click", () => {
+    modalOverlay.classList.remove("show");
+    _modalCallback = null;
+  });
+
+  modalTitleInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") modalConfirm.click();
+    if (e.key === "Escape") modalCancel.click();
+  });
+
+  let emailDebounce = null;
+  emailInput.addEventListener("input", () => {
+    const val = emailInput.value.trim();
+    emailInput.classList.remove("error");
+    emailError.style.display = "none";
+
+    clearTimeout(emailDebounce);
+    emailDebounce = setTimeout(async () => {
+      if (!val) {
+        currentEmail = "";
+        documentList = [];
+        renderDocList();
+        return;
+      }
+      if (!isValidEmail(val)) {
+        emailInput.classList.add("error");
+        emailError.style.display = "inline";
+        emailError.textContent = "Invalid email";
+        currentEmail = "";
+        documentList = [];
+        renderDocList();
+        return;
+      }
+      currentEmail = val;
+      await fetchDocuments(currentEmail);
+    }, 500);
+  });
+
+  document.addEventListener("keydown", (e) => {
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key === "Enter") { e.preventDefault(); runCode(); }
+    if (mod && e.key === "s") { e.preventDefault(); saveDocument(); }
+  });
+
+  runBtn.addEventListener("click", runCode);
+  saveBtn.addEventListener("click", saveDocument);
+  newDocBtn.addEventListener("click", newDocument);
+
+  setStatus("Ready — enter your email to load saved documents");
+</script>
+</body>
+</html>
