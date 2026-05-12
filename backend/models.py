@@ -24,3 +24,8 @@ class UpdateDocumentRequest(BaseModel):
     title: str
     code: str
     stdin: str = ""
+
+
+class CreateSessionRequest(BaseModel):
+    owner_email: str
+    doc_id: str
