@@ -24,11 +24,3 @@ class UpdateDocumentRequest(BaseModel):
     title: str
     code: str
     stdin: str = ""
-
-
-class DocumentResponse(BaseModel):
-    id: str
-    title: str
-    code: str
-    stdin: str
-    updated_at: str
