@@ -305,6 +305,20 @@ async def ws_session(websocket: WebSocket, session_id: str, email: str):
                     "email": email,
                 }, exclude=email)
 
+            elif msg_type == "kick_member":
+                if email == state.owner_email:
+                    target = data.get("email")
+                    if target and target in state.members and target != state.owner_email:
+                        if target in state.connections:
+                            try:
+                                await state.connections[target].send_json({"type": "kicked"})
+                                await state.connections[target].close()
+                            except Exception:
+                                pass
+                            state.connections.pop(target, None)
+                        state.members = [m for m in state.members if m != target]
+                        await _broadcast(state, {"type": "lobby_update", "members": list(state.members)})
+
     except WebSocketDisconnect:
         state.connections.pop(email, None)
         await _broadcast(state, {"type": "member_disconnected", "email": email})

@@ -273,7 +273,69 @@
     #save-btn { background: var(--accent); color: #fff; }
     #new-doc-btn { background: var(--border2); color: var(--text); }
     #share-btn { background: var(--accent2); color: var(--bg); }
-    #leave-session-btn { background: var(--red); color: #fff; display: none; }
+    #leave-session-btn { background: var(--red); color: #fff; }
+
+    /* Member avatar popover (owner kick UI) */
+    #member-avatars { position: relative; }
+    .avatar-wrap {
+      position: relative;
+      display: inline-flex;
+    }
+    .avatar-popover {
+      display: none;
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--panel);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 8px 10px;
+      white-space: nowrap;
+      z-index: 200;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      min-width: 140px;
+      text-align: left;
+    }
+    .avatar-popover.show { display: block; }
+    .avatar-popover .pop-name {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: "JetBrains Mono", monospace;
+      margin-bottom: 6px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 160px;
+    }
+    .avatar-popover .kick-btn {
+      width: 100%;
+      background: rgba(248,113,113,0.15);
+      color: var(--red);
+      border: 1px solid rgba(248,113,113,0.3);
+      border-radius: 5px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: left;
+    }
+    .avatar-popover .kick-btn:hover { background: rgba(248,113,113,0.25); }
+
+    /* Kick button in lobby member pills */
+    .pill-kick {
+      background: transparent;
+      border: 1px solid rgba(248,113,113,0.35);
+      color: var(--red);
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-left: auto;
+      flex-shrink: 0;
+      font-family: "Syne", sans-serif;
+    }
+    .pill-kick:hover { background: rgba(248,113,113,0.15); }
 
     .running #run-btn { opacity: 0.45; pointer-events: none; }
 
@@ -915,6 +977,16 @@
   </div>
 </div>
 
+<!-- ═══════════════ KICKED MODAL ═══════════════ -->
+<div id="kicked-overlay" class="overlay">
+  <div id="session-ended-modal">
+    <div class="end-icon">🚫</div>
+    <h3>Removed from Session</h3>
+    <p>The host removed you from this session.</p>
+    <button id="kicked-ok">Back to Editor</button>
+  </div>
+</div>
+
 <script type="module">
   import { EditorView, keymap, EditorState, indentWithTab, basicSetup, python, oneDark,
            Decoration, StateEffect, StateField, RangeSetBuilder, WidgetType } from "./codemirror-bundle.js";
@@ -964,9 +1036,8 @@
         if (e.is(addCursorEffect))         next.set(e.value.email, e.value);
         else if (e.is(removeCursorEffect)) next.delete(e.value);
       }
-      if (tr.docChanged)
-        for (const [em, c] of next.entries())
-          next.set(em, { ...c, pos: tr.changes.mapPos(c.pos) });
+      // Don't mapPos: full-doc replacements (code_change sync) map every
+      // cursor to position 0. Cursors self-correct on the next cursor msg.
       return next;
     },
     provide(f) {
@@ -1236,6 +1307,7 @@
   }
 
   function loadDocument(doc) {
+    if (isInSession) { setStatus("Leave the session before switching documents."); return; }
     currentDocId = doc.id;
     docTitleInput.value = doc.title;
     setCode(doc.code);
@@ -1503,7 +1575,7 @@
         stdinInput.value = msg.stdin || "";
         suppressSync = false;
         renderSessionBadge();
-        leaveSessionBtn.style.display = "";
+        leaveSessionBtn.style.display = "inline-block";
         newDocBtn.style.display  = "none";
         shareBtn.style.display   = "none";
         setStatus("🟢 Live session — changes sync to all members");
@@ -1513,6 +1585,7 @@
 
       case "code_change": {
         if (msg.email !== currentEmail) {
+          removeRemoteCursor(msg.email); // will re-appear on next cursor msg
           suppressSync = true;
           setCode(msg.code);
           suppressSync = false;
@@ -1566,6 +1639,21 @@
         break;
       }
 
+      case "kicked": {
+        clearAllRemoteCursors();
+        isInSession = false;
+        ws = null;
+        lobbyOverlay.classList.remove("show");
+        sessionBadge.classList.remove("show");
+        leaveSessionBtn.style.display = "none";
+        newDocBtn.style.display = "";
+        shareBtn.style.display  = "";
+        updateShareBtn();
+        document.getElementById("kicked-overlay").classList.add("show");
+        history.replaceState({}, "", window.location.pathname);
+        break;
+      }
+
       case "error":
         lobbyStatus.textContent = "Error: " + msg.message;
         setStatus("Session error: " + msg.message);
@@ -1580,14 +1668,22 @@
       const pill = document.createElement("div");
       pill.className = "member-pill online";
       pill.dataset.email = email;
-      const isOwner = i === 0;
-      const isYou   = email === currentEmail;
+      const isOwner   = i === 0;
+      const isYou     = email === currentEmail;
+      const canKick   = isSessionOwner && !isOwner && !isYou;
       pill.innerHTML = `
         <div class="pill-avatar" style="background:${memberColor(i)}">${initials(email)}</div>
         <span class="pill-name">${escHtml(email)}</span>
         ${isOwner ? '<span class="pill-tag owner-tag">Owner</span>' : ""}
         ${isYou   ? '<span class="pill-tag you-tag">You</span>'    : ""}
-        <span class="pill-status"></span>`;
+        <span class="pill-status"></span>
+        ${canKick ? `<button class="pill-kick" data-email="${escHtml(email)}">Kick</button>` : ""}`;
+      if (canKick) {
+        pill.querySelector(".pill-kick").addEventListener("click", e => {
+          e.stopPropagation();
+          kickMember(email);
+        });
+      }
       lobbyMembersEl.appendChild(pill);
     });
   }
@@ -1596,19 +1692,65 @@
     sessionBadge.classList.add("show");
     memberAvatars.innerHTML = "";
     sessionMembers.forEach((email, i) => {
+      const wrap = document.createElement("div");
+      wrap.className = "avatar-wrap";
+
       const av = document.createElement("div");
       av.className = "member-avatar";
       av.style.background = memberColor(i);
-      av.title = email;
       av.textContent = initials(email);
-      memberAvatars.appendChild(av);
+      av.title = email;
+
+      const canKick = isSessionOwner && email !== currentEmail;
+      if (canKick || !isSessionOwner) {
+        const pop = document.createElement("div");
+        pop.className = "avatar-popover";
+        pop.innerHTML = `<div class="pop-name">${escHtml(email)}</div>
+          ${canKick ? `<button class="kick-btn">Kick from session</button>` : ""}`;
+        if (canKick) {
+          pop.querySelector(".kick-btn").addEventListener("click", e => {
+            e.stopPropagation();
+            pop.classList.remove("show");
+            kickMember(email);
+          });
+        }
+        av.addEventListener("click", e => {
+          e.stopPropagation();
+          // Close all other popovers
+          document.querySelectorAll(".avatar-popover.show").forEach(p => p.classList.remove("show"));
+          pop.classList.toggle("show");
+        });
+        wrap.appendChild(av);
+        wrap.appendChild(pop);
+      } else {
+        wrap.appendChild(av);
+      }
+      memberAvatars.appendChild(wrap);
     });
   }
+
+  // Close avatar popovers when clicking outside
+  document.addEventListener("click", () => {
+    document.querySelectorAll(".avatar-popover.show").forEach(p => p.classList.remove("show"));
+  });
 
   // ─── Session-ended modal ─────────────────────────────────
   sessionEndedOk.addEventListener("click", () => {
     sessionEndedOv.classList.remove("show");
     newDocument();
+  });
+
+  // ─── Kick ────────────────────────────────────────────────
+  function kickMember(email) {
+    if (!confirm(`Kick ${email} from the session?`)) return;
+    wsSend({ type: "kick_member", email });
+  }
+
+  const kickedOv = document.getElementById("kicked-overlay");
+  document.getElementById("kicked-ok").addEventListener("click", () => {
+    kickedOv.classList.remove("show");
+    newDocument();
+    history.replaceState({}, "", window.location.pathname);
   });
 
   // ─── Stdin sync ──────────────────────────────────────────
