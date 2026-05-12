@@ -424,27 +424,32 @@
     .cm-editor { height: 100%; font-size: 13px; }
     .cm-scroller { overflow: auto !important; height: 100%; }
 
-    /* Remote collaborator cursors */
-    .remote-cursor {
-      position: absolute;
+    /* Remote collaborator cursors (CM6 widget decorations) */
+    .cm-remote-cursor {
+      display: inline-block;
       width: 2px;
+      background: var(--rc, #7c6af7);
       border-radius: 1px;
+      vertical-align: text-top;
+      height: 1.15em;
+      position: relative;
       pointer-events: none;
-      z-index: 10;
-      transition: left 0.08s, top 0.08s;
+      z-index: 5;
     }
-    .remote-cursor-label {
+    .cm-remote-cursor-name {
       position: absolute;
-      top: -16px;
-      left: 3px;
+      bottom: 100%;
+      left: 0;
+      background: var(--rc, #7c6af7);
+      color: #0d0d14;
       font-size: 10px;
       font-weight: 700;
-      padding: 1px 5px;
-      border-radius: 3px;
-      white-space: nowrap;
       font-family: "Syne", sans-serif;
-      color: var(--bg);
-      opacity: 0.92;
+      padding: 1px 6px;
+      border-radius: 3px 3px 3px 0;
+      white-space: nowrap;
+      pointer-events: none;
+      margin-bottom: 2px;
     }
 
     #stdin-section {
@@ -911,7 +916,8 @@
 </div>
 
 <script type="module">
-  import { EditorView, keymap, EditorState, indentWithTab, basicSetup, python, oneDark } from "./codemirror-bundle.js";
+  import { EditorView, keymap, EditorState, indentWithTab, basicSetup, python, oneDark,
+           Decoration, StateEffect, StateField, RangeSetBuilder, WidgetType } from "./codemirror-bundle.js";
 
   const API = window.location.port === "3000" ? "http://localhost:8000" : "";
   const MEMBER_COLORS = ["#7c6af7", "#4ade80", "#fb923c", "#a78bfa", "#f87171"];
@@ -929,7 +935,52 @@
   let suppressSync   = false;
   let codeTimer      = null;
   let stdinTimer     = null;
-  const remoteCursors = new Map(); // email -> { line, col, timer }
+
+  // ─── Remote cursor CM6 state (must be before editor) ─────
+  const addCursorEffect    = StateEffect.define();
+  const removeCursorEffect = StateEffect.define();
+
+  class RemoteCursorWidget extends WidgetType {
+    constructor(color, name) { super(); this.color = color; this.name = name; }
+    eq(other) { return other.color === this.color && other.name === this.name; }
+    toDOM() {
+      const beam  = document.createElement("span");
+      beam.className = "cm-remote-cursor";
+      beam.style.setProperty("--rc", this.color);
+      const label = document.createElement("span");
+      label.className   = "cm-remote-cursor-name";
+      label.textContent = this.name;
+      beam.appendChild(label);
+      return beam;
+    }
+    ignoreEvent() { return true; }
+  }
+
+  const remoteCursorField = StateField.define({
+    create() { return new Map(); },
+    update(map, tr) {
+      const next = new Map(map);
+      for (const e of tr.effects) {
+        if (e.is(addCursorEffect))         next.set(e.value.email, e.value);
+        else if (e.is(removeCursorEffect)) next.delete(e.value);
+      }
+      if (tr.docChanged)
+        for (const [em, c] of next.entries())
+          next.set(em, { ...c, pos: tr.changes.mapPos(c.pos) });
+      return next;
+    },
+    provide(f) {
+      return EditorView.decorations.from(f, map => {
+        if (!map.size) return Decoration.none;
+        const sorted = [...map.values()].sort((a, b) => a.pos - b.pos);
+        const builder = new RangeSetBuilder();
+        for (const c of sorted)
+          builder.add(c.pos, c.pos,
+            Decoration.widget({ widget: new RemoteCursorWidget(c.color, c.name), side: 1 }));
+        return builder.finish();
+      });
+    },
+  });
 
   // ─── Editor ───────────────────────────────────────────────
   const editor = new EditorView({
@@ -942,6 +993,7 @@
       EditorView.theme({
         ".cm-scroller": { fontFamily: '"JetBrains Mono","Fira Code",monospace' },
       }),
+      remoteCursorField,
       EditorView.updateListener.of((update) => {
         if (!isInSession || suppressSync) return;
         if (update.docChanged) {
@@ -958,13 +1010,6 @@
       }),
     ],
     parent: document.getElementById("editor-wrapper"),
-  });
-
-  // Re-position remote cursors when editor scrolls
-  editor.scrollDOM.addEventListener("scroll", () => {
-    for (const [email, { line, col }] of remoteCursors.entries()) {
-      renderRemoteCursor(email, line, col);
-    }
   });
 
   // ─── DOM refs ─────────────────────────────────────────────
@@ -1033,58 +1078,28 @@
   function memberColor(idx) { return MEMBER_COLORS[idx % MEMBER_COLORS.length]; }
   function initials(email)  { return (email || "?")[0].toUpperCase(); }
 
-  // ─── Remote cursors ───────────────────────────────────────
+  // ─── Remote cursor helpers ────────────────────────────────
   function lineColToOffset(line, col) {
     const doc = editor.state.doc;
     if (line < 1 || line > doc.lines) return 0;
-    const lineObj = doc.line(line);
-    return lineObj.from + Math.min(col, lineObj.length);
+    const ln = doc.line(line);
+    return ln.from + Math.min(col, ln.length);
   }
 
-  function renderRemoteCursor(email, line, col) {
-    const idx    = sessionMembers.indexOf(email);
-    const color  = memberColor(idx >= 0 ? idx : 0);
-    const pos    = lineColToOffset(line, col);
-    const coords = editor.coordsAtPos(pos);
-    if (!coords) return;
-
-    const wrapper = document.getElementById("editor-wrapper");
-    const wRect   = wrapper.getBoundingClientRect();
-    const cursorId = "rc-" + email.replace(/[^a-z0-9]/gi, "_");
-
-    let el = document.getElementById(cursorId);
-    if (!el) {
-      el = document.createElement("div");
-      el.id        = cursorId;
-      el.className = "remote-cursor";
-      const label  = document.createElement("div");
-      label.className = "remote-cursor-label";
-      label.textContent = email.split("@")[0];
-      el.appendChild(label);
-      wrapper.appendChild(el);
-    }
-    el.style.left       = (coords.left - wRect.left) + "px";
-    el.style.top        = (coords.top  - wRect.top)  + "px";
-    el.style.height     = (coords.bottom - coords.top) + "px";
-    el.style.background = color;
-    el.querySelector(".remote-cursor-label").style.background = color;
-
-    const prev = remoteCursors.get(email);
-    if (prev?.timer) clearTimeout(prev.timer);
-    const timer = setTimeout(() => removeRemoteCursor(email), 8000);
-    remoteCursors.set(email, { line, col, timer });
+  function setRemoteCursor(email, pos) {
+    const idx   = sessionMembers.indexOf(email);
+    const color = memberColor(idx >= 0 ? idx : 0);
+    editor.dispatch({ effects: addCursorEffect.of({ email, pos, color, name: email.split("@")[0] }) });
   }
 
   function removeRemoteCursor(email) {
-    const id = "rc-" + email.replace(/[^a-z0-9]/gi, "_");
-    document.getElementById(id)?.remove();
-    const prev = remoteCursors.get(email);
-    if (prev?.timer) clearTimeout(prev.timer);
-    remoteCursors.delete(email);
+    editor.dispatch({ effects: removeCursorEffect.of(email) });
   }
 
   function clearAllRemoteCursors() {
-    for (const email of [...remoteCursors.keys()]) removeRemoteCursor(email);
+    const effects = [...editor.state.field(remoteCursorField).keys()]
+      .map(em => removeCursorEffect.of(em));
+    if (effects.length) editor.dispatch({ effects });
   }
 
   // ─── Email Gate ───────────────────────────────────────────
@@ -1517,8 +1532,8 @@
       }
 
       case "cursor": {
-        if (msg.email !== currentEmail) {
-          renderRemoteCursor(msg.email, msg.line, msg.col);
+        if (msg.email !== currentEmail && isInSession) {
+          setRemoteCursor(msg.email, lineColToOffset(msg.line, msg.col));
         }
         const idx = sessionMembers.indexOf(msg.email);
         const av  = memberAvatars.children[idx];
