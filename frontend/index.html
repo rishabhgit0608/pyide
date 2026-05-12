@@ -381,9 +381,9 @@
 </div>
 
 <script type="module">
-  import { EditorView, EditorState, basicSetup, keymap, indentWithTab } from "https://esm.sh/codemirror@6";
-  import { python } from "https://esm.sh/@codemirror/lang-python@6?deps=@codemirror/state,@codemirror/view,@codemirror/language";
-  import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark@6?deps=@codemirror/state,@codemirror/view";
+  import { EditorView, basicSetup, keymap, indentWithTab } from "https://esm.sh/codemirror@6";
+  import { python } from "https://esm.sh/@codemirror/lang-python@6";
+  import { oneDark } from "https://esm.sh/@codemirror/theme-one-dark@6";
 
   const API = "http://localhost:8000";
 
@@ -397,18 +397,16 @@ print(f"Hello, {name}!")
 `;
 
   const editor = new EditorView({
-    state: EditorState.create({
-      doc: STARTER_CODE,
-      extensions: [
-        basicSetup,
-        python(),
-        oneDark,
-        keymap.of([indentWithTab]),
-        EditorView.theme({
-          ".cm-scroller": { fontFamily: '"JetBrains Mono","Fira Code","Cascadia Code",monospace' },
-        }),
-      ],
-    }),
+    doc: STARTER_CODE,
+    extensions: [
+      basicSetup,
+      python(),
+      oneDark,
+      keymap.of([indentWithTab]),
+      EditorView.theme({
+        ".cm-scroller": { fontFamily: '"JetBrains Mono","Fira Code","Cascadia Code",monospace' },
+      }),
+    ],
     parent: document.getElementById("editor-wrapper"),
   });
 
