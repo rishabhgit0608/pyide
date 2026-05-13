@@ -1,9 +1,8 @@
 import asyncio
 import os
 import pathlib
-import random
 import re
-import string
+import secrets
 import tempfile
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -27,6 +26,10 @@ from models import (
 EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$")
 
 
+MAX_SESSIONS = 100
+SESSION_TTL_SECONDS = 2 * 60 * 60  # 2 hours
+
+
 @dataclass
 class SessionState:
     session_id: str
@@ -38,13 +41,27 @@ class SessionState:
     stdin: str = ""
     started: bool = False
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    kicked_members: list = field(default_factory=list)
+    allowed_emails: set = field(default_factory=set)
 
 
 sessions: dict[str, SessionState] = {}
 
 
+async def _cleanup_old_sessions():
+    while True:
+        await asyncio.sleep(600)
+        now = datetime.now(timezone.utc)
+        stale = [
+            sid for sid, s in list(sessions.items())
+            if (now - s.created_at).total_seconds() > SESSION_TTL_SECONDS
+        ]
+        for sid in stale:
+            sessions.pop(sid, None)
+
+
 def _random_session_id() -> str:
-    return "".join(random.choices(string.ascii_letters + string.digits, k=8))
+    return secrets.token_urlsafe(8)
 
 
 async def _broadcast(state: SessionState, msg: dict, exclude: str | None = None) -> None:
@@ -64,7 +81,9 @@ async def _broadcast(state: SessionState, msg: dict, exclude: str | None = None)
 async def lifespan(app: FastAPI):
     db = get_db()
     await db.documents.create_index("email")
+    task = asyncio.create_task(_cleanup_old_sessions())
     yield
+    task.cancel()
 
 
 app = FastAPI(title="PyIDE", lifespan=lifespan)
@@ -199,6 +218,11 @@ async def create_session(req: CreateSessionRequest, db=Depends(get_db)):
     doc = await db.documents.find_one({"_id": oid})
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
+    if doc.get("email") != req.owner_email:
+        raise HTTPException(status_code=403, detail="You do not own this document")
+
+    if len(sessions) >= MAX_SESSIONS:
+        raise HTTPException(status_code=503, detail="Too many active sessions, try again later")
 
     sid = _random_session_id()
     while sid in sessions:
@@ -209,6 +233,7 @@ async def create_session(req: CreateSessionRequest, db=Depends(get_db)):
         owner_email=req.owner_email,
         doc_id=req.doc_id,
         members=[req.owner_email],
+        allowed_emails={req.owner_email},
         code=doc.get("code", ""),
         stdin=doc.get("stdin", ""),
     )
@@ -237,6 +262,18 @@ async def ws_session(websocket: WebSocket, session_id: str, email: str):
         await websocket.close()
         return
 
+    if email in state.kicked_members:
+        await websocket.accept()
+        await websocket.send_json({"type": "error", "message": "You have been removed from this session"})
+        await websocket.close()
+        return
+
+    if state.started and email not in state.allowed_emails:
+        await websocket.accept()
+        await websocket.send_json({"type": "error", "message": "Session already in progress"})
+        await websocket.close()
+        return
+
     if email not in state.members and len(state.members) >= 5:
         await websocket.accept()
         await websocket.send_json({"type": "error", "message": "Session full"})
@@ -246,6 +283,7 @@ async def ws_session(websocket: WebSocket, session_id: str, email: str):
     await websocket.accept()
     if email not in state.members:
         state.members.append(email)
+    state.allowed_emails.add(email)
     state.connections[email] = websocket
 
     await _broadcast(state, {"type": "lobby_update", "members": list(state.members)})
@@ -309,6 +347,8 @@ async def ws_session(websocket: WebSocket, session_id: str, email: str):
                 if email == state.owner_email:
                     target = data.get("email")
                     if target and target in state.members and target != state.owner_email:
+                        state.kicked_members.append(target)
+                        state.allowed_emails.discard(target)
                         if target in state.connections:
                             try:
                                 await state.connections[target].send_json({"type": "kicked"})
@@ -321,9 +361,17 @@ async def ws_session(websocket: WebSocket, session_id: str, email: str):
 
     except WebSocketDisconnect:
         state.connections.pop(email, None)
-        await _broadcast(state, {"type": "member_disconnected", "email": email})
-        if email == state.owner_email and not state.started:
+        state.members = [m for m in state.members if m != email]
+        if email == state.owner_email:
             await _broadcast(state, {"type": "session_ended"})
+            sessions.pop(state.session_id, None)
+        elif not state.started:
+            await _broadcast(state, {"type": "lobby_update", "members": list(state.members)})
+        else:
+            await _broadcast(state, {"type": "member_disconnected", "email": email})
+            if len(state.members) <= 1:
+                await _broadcast(state, {"type": "session_ended"})
+                sessions.pop(state.session_id, None)
 
 
 _frontend = pathlib.Path(__file__).parent.parent / "frontend"

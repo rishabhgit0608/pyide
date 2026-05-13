@@ -813,8 +813,8 @@
     }
     #lobby-start-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
-    /* ── Session-ended modal ──────────────────────── */
-    #session-ended-modal {
+    /* ── Session-ended / kicked modals ───────────── */
+    #session-ended-modal, #kicked-modal {
       background: var(--panel);
       border: 1px solid var(--border2);
       border-radius: 14px;
@@ -822,10 +822,10 @@
       width: 380px;
       text-align: center;
     }
-    #session-ended-modal .end-icon { font-size: 36px; margin-bottom: 16px; }
-    #session-ended-modal h3 { font-size: 18px; font-weight: 800; margin-bottom: 8px; }
-    #session-ended-modal p { font-size: 13px; color: var(--muted); margin-bottom: 24px; font-family: "JetBrains Mono", monospace; }
-    #session-ended-ok { background: var(--accent); color: #fff; padding: 10px 28px; }
+    #session-ended-modal .end-icon, #kicked-modal .end-icon { font-size: 36px; margin-bottom: 16px; }
+    #session-ended-modal h3, #kicked-modal h3 { font-size: 18px; font-weight: 800; margin-bottom: 8px; }
+    #session-ended-modal p, #kicked-modal p { font-size: 13px; color: var(--muted); margin-bottom: 24px; font-family: "JetBrains Mono", monospace; }
+    #session-ended-ok, #kicked-ok { background: var(--accent); color: #fff; padding: 10px 28px; }
 
     /* ── Animations ───────────────────────────────── */
     @keyframes fadeIn {
@@ -979,7 +979,7 @@
 
 <!-- ═══════════════ KICKED MODAL ═══════════════ -->
 <div id="kicked-overlay" class="overlay">
-  <div id="session-ended-modal">
+  <div id="kicked-modal">
     <div class="end-icon">🚫</div>
     <h3>Removed from Session</h3>
     <p>The host removed you from this session.</p>
@@ -1007,6 +1007,7 @@
   let suppressSync   = false;
   let codeTimer      = null;
   let stdinTimer     = null;
+  let cursorTimer    = null;
 
   // ─── Remote cursor CM6 state (must be before editor) ─────
   const addCursorEffect    = StateEffect.define();
@@ -1074,9 +1075,12 @@
           }, 300);
         }
         if (update.selectionSet) {
-          const head = update.state.selection.main.head;
-          const line = update.state.doc.lineAt(head);
-          wsSend({ type: "cursor", line: line.number, col: head - line.from, email: currentEmail });
+          clearTimeout(cursorTimer);
+          cursorTimer = setTimeout(() => {
+            const head = update.state.selection.main.head;
+            const line = update.state.doc.lineAt(head);
+            wsSend({ type: "cursor", line: line.number, col: head - line.from, email: currentEmail });
+          }, 80);
         }
       }),
     ],
@@ -1568,7 +1572,7 @@
       ? "Waiting for others to join..."
       : "Waiting for owner to start..."; };
     ws.onclose = () => {
-      if (isInSession) setTimeout(() => connectWS(sid, email), 3000);
+      setTimeout(() => { if (isInSession) connectWS(sid, email); }, 3000);
     };
     ws.onmessage = e => handleWS(JSON.parse(e.data));
   }
@@ -1640,9 +1644,9 @@
       }
 
       case "member_disconnected": {
-        const pill = lobbyMembersEl.querySelector(`[data-email="${msg.email}"]`);
-        if (pill) pill.classList.remove("online");
+        sessionMembers = sessionMembers.filter(m => m !== msg.email);
         removeRemoteCursor(msg.email);
+        if (isInSession) renderSessionBadge();
         break;
       }
 
