@@ -1174,8 +1174,28 @@
   }
 
   // ─── Email Gate ───────────────────────────────────────────
+  const SESSION_KEY = "pyide_session";
+  const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 h
+
+  function saveSession(email) {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ email, ts: Date.now() }));
+  }
+  function clearSession() {
+    localStorage.removeItem(SESSION_KEY);
+  }
+  function loadSession() {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      if (!raw) return null;
+      const { email, ts } = JSON.parse(raw);
+      if (Date.now() - ts > SESSION_TTL) { clearSession(); return null; }
+      return email;
+    } catch { return null; }
+  }
+
   function unlockUI(email) {
     currentEmail = email;
+    saveSession(email);
     document.body.classList.remove("locked");
     gateEl.classList.add("hidden");
     emailDisplayText.textContent = email;
@@ -1187,6 +1207,7 @@
   }
 
   function lockUI() {
+    clearSession();
     currentEmail = "";
     currentDocId = null;
     documentList = [];
@@ -1780,8 +1801,14 @@
   newDocBtn.addEventListener("click", newDocument);
 
   // ─── Init ────────────────────────────────────────────────
-  setStatus("Ready — enter your email to get started");
-  setTimeout(() => gateEmailInput.focus(), 100);
+  const savedEmail = loadSession();
+  if (savedEmail) {
+    unlockUI(savedEmail);
+    setStatus("Ready");
+  } else {
+    setStatus("Ready — enter your email to get started");
+    setTimeout(() => gateEmailInput.focus(), 100);
+  }
 </script>
 </body>
 </html>
