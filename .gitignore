@@ -6,3 +6,5 @@ __pycache__/
 frontend/build/
 bundler/node_modules/
 bundler/package-lock.json
+frontend/dist/
+node_modules/

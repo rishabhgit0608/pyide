@@ -1,0 +1,1818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PyIDE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:       #0d0d14;
+      --surface:  #13131f;
+      --panel:    #1a1a2e;
+      --border:   #2a2a40;
+      --border2:  #3a3a55;
+      --text:     #e2e2f0;
+      --muted:    #6b6b8a;
+      --accent:   #7c6af7;
+      --accent2:  #5de6d8;
+      --green:    #4ade80;
+      --red:      #f87171;
+      --orange:   #fb923c;
+      --yellow:   #fbbf24;
+
+      --member-0: #7c6af7;
+      --member-1: #4ade80;
+      --member-2: #fb923c;
+      --member-3: #a78bfa;
+      --member-4: #f87171;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Syne", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Locked state ─────────────────────────────── */
+    body.locked #main,
+    body.locked #statusbar,
+    body.locked .topbar-actions,
+    body.locked #email-display {
+      opacity: 0.25;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    /* ── Email Gate ───────────────────────────────── */
+    #email-gate {
+      position: fixed;
+      inset: 0;
+      background: rgba(13, 13, 20, 0.88);
+      backdrop-filter: blur(12px);
+      z-index: 300;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: fadeIn 0.2s ease;
+    }
+    #email-gate.hidden { display: none; }
+
+    #gate-card {
+      background: var(--panel);
+      border: 1px solid var(--border2);
+      border-radius: 20px;
+      padding: 48px 52px;
+      width: 440px;
+      text-align: center;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(124,106,247,0.15);
+    }
+
+    #gate-card .gate-wordmark {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    #gate-card .gate-wordmark::before,
+    #gate-card .gate-wordmark::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--border2);
+    }
+
+    #gate-card h2 {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 6px;
+      letter-spacing: -0.01em;
+    }
+    #gate-card p {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 28px;
+      font-family: "JetBrains Mono", monospace;
+      font-weight: 400;
+    }
+
+    #gate-email-input {
+      width: 100%;
+      background: var(--surface);
+      border: 1.5px solid var(--border2);
+      border-radius: 10px;
+      color: var(--text);
+      padding: 12px 16px;
+      font-size: 14px;
+      font-family: "JetBrains Mono", monospace;
+      outline: none;
+      margin-bottom: 8px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    #gate-email-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(124,106,247,0.15);
+    }
+    #gate-email-input.error { border-color: var(--red); }
+
+    #gate-email-error {
+      font-size: 12px;
+      color: var(--red);
+      margin-bottom: 16px;
+      display: none;
+      font-family: "JetBrains Mono", monospace;
+    }
+    #gate-email-error.show { display: block; }
+
+    #gate-continue-btn {
+      width: 100%;
+      background: var(--accent);
+      color: #fff;
+      padding: 12px;
+      font-size: 14px;
+      font-weight: 700;
+      font-family: "Syne", sans-serif;
+      letter-spacing: 0.05em;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    #gate-continue-btn:hover { opacity: 0.88; transform: translateY(-1px); }
+    #gate-continue-btn:active { transform: translateY(0); }
+
+    /* ── Top Bar ──────────────────────────────────── */
+    #topbar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 16px;
+      height: 46px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    .logo {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--accent);
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-right: 4px;
+      flex-shrink: 0;
+    }
+
+    #email-display {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+      font-family: "JetBrains Mono", monospace;
+      overflow: hidden;
+    }
+    #email-display.show { display: flex; }
+    #email-display-text {
+      max-width: 180px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #email-change-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+    #email-change-link:hover { text-decoration: underline; }
+
+    #session-badge {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      background: rgba(74, 222, 128, 0.08);
+      border: 1px solid rgba(74, 222, 128, 0.3);
+      border-radius: 8px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--green);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+    #session-badge.show { display: flex; }
+    #session-badge .live-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    #member-avatars {
+      display: flex;
+      gap: 3px;
+    }
+    .member-avatar {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 800;
+      color: var(--bg);
+      cursor: default;
+      transition: transform 0.2s;
+      font-family: "Syne", sans-serif;
+    }
+    .member-avatar:hover { transform: scale(1.2); z-index: 1; }
+
+    .topbar-spacer { flex: 1; }
+
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    button {
+      padding: 6px 14px;
+      border: none;
+      border-radius: 7px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 700;
+      font-family: "Syne", sans-serif;
+      letter-spacing: 0.04em;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    button:hover:not(:disabled) { opacity: 0.85; transform: translateY(-1px); }
+    button:active:not(:disabled) { transform: translateY(0); }
+    button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    #run-btn  { background: var(--green);  color: var(--bg); }
+    #save-btn { background: var(--accent); color: #fff; }
+    #new-doc-btn { background: var(--border2); color: var(--text); }
+    #share-btn { background: var(--accent2); color: var(--bg); }
+    #leave-session-btn { background: var(--red); color: #fff; display: none; }
+
+    /* Member avatar popover (owner kick UI) */
+    #member-avatars { position: relative; }
+    .avatar-wrap {
+      position: relative;
+      display: inline-flex;
+    }
+    .avatar-popover {
+      display: none;
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--panel);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 8px 10px;
+      white-space: nowrap;
+      z-index: 200;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      min-width: 140px;
+      text-align: left;
+    }
+    .avatar-popover.show { display: block; }
+    .avatar-popover .pop-name {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: "JetBrains Mono", monospace;
+      margin-bottom: 6px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 160px;
+    }
+    .avatar-popover .kick-btn {
+      width: 100%;
+      background: rgba(248,113,113,0.15);
+      color: var(--red);
+      border: 1px solid rgba(248,113,113,0.3);
+      border-radius: 5px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: left;
+    }
+    .avatar-popover .kick-btn:hover { background: rgba(248,113,113,0.25); }
+
+    /* Kick button in lobby member pills */
+    .pill-kick {
+      background: transparent;
+      border: 1px solid rgba(248,113,113,0.35);
+      color: var(--red);
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-left: auto;
+      flex-shrink: 0;
+      font-family: "Syne", sans-serif;
+    }
+    .pill-kick:hover { background: rgba(248,113,113,0.15); }
+
+    .running #run-btn { opacity: 0.45; pointer-events: none; }
+
+    /* ── Main layout ──────────────────────────────── */
+    #main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    #sidebar {
+      width: 220px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    #sidebar-header {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    #sidebar-header span {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    #doc-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 0;
+    }
+    #doc-list::-webkit-scrollbar { width: 3px; }
+    #doc-list::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+    .doc-card {
+      padding: 8px 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border-left: 2px solid transparent;
+      transition: background 0.1s;
+    }
+    .doc-card:hover { background: var(--panel); }
+    .doc-card.active { background: var(--panel); border-left-color: var(--accent); }
+    .doc-card .doc-info { flex: 1; min-width: 0; }
+    .doc-card .doc-title {
+      font-size: 12px;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-family: "JetBrains Mono", monospace;
+    }
+    .doc-card .doc-date { font-size: 10px; color: var(--muted); margin-top: 2px; }
+    .doc-card .delete-btn {
+      background: transparent;
+      color: var(--red);
+      padding: 2px 6px;
+      font-size: 12px;
+      border-radius: 4px;
+      opacity: 0;
+      transition: opacity 0.1s;
+      font-family: "JetBrains Mono", monospace;
+    }
+    .doc-card:hover .delete-btn { opacity: 1; }
+    .doc-card .delete-btn:hover { background: rgba(248,113,113,0.12); opacity: 1; }
+
+    #sidebar-empty {
+      padding: 20px 12px;
+      text-align: center;
+      font-size: 11px;
+      color: var(--muted);
+      font-family: "JetBrains Mono", monospace;
+      line-height: 1.6;
+    }
+
+    #editor-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #doc-title-bar {
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      padding: 6px 16px;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    #doc-title-input {
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+      font-family: "Syne", sans-serif;
+      outline: none;
+      flex: 1;
+    }
+    #doc-title-input::placeholder { color: var(--border2); }
+
+    #panes {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    #editor-pane {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-right: 1px solid var(--border);
+    }
+
+    #editor-label, #stdin-label, #output-label {
+      padding: 4px 12px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    #editor-wrapper {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      position: relative;
+    }
+    .cm-editor { height: 100%; font-size: 13px; }
+    .cm-scroller { overflow: auto !important; height: 100%; }
+
+    /* Remote collaborator cursors (CM6 widget decorations) */
+    .cm-remote-cursor {
+      display: inline-block;
+      width: 2px;
+      background: var(--rc, #7c6af7);
+      border-radius: 1px;
+      vertical-align: text-top;
+      height: 1.15em;
+      position: relative;
+      pointer-events: none;
+      z-index: 5;
+    }
+    .cm-remote-cursor-name {
+      position: absolute;
+      bottom: 100%;
+      left: 0;
+      background: var(--rc, #7c6af7);
+      color: #0d0d14;
+      font-size: 10px;
+      font-weight: 700;
+      font-family: "Syne", sans-serif;
+      padding: 1px 6px;
+      border-radius: 3px 3px 3px 0;
+      white-space: nowrap;
+      pointer-events: none;
+      margin-bottom: 2px;
+    }
+
+    #stdin-section {
+      flex-shrink: 0;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      max-height: 110px;
+    }
+    #stdin-input {
+      flex: 1;
+      background: var(--surface);
+      color: var(--text);
+      border: none;
+      padding: 8px 12px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+      resize: none;
+      outline: none;
+    }
+
+    #output-pane {
+      width: 40%;
+      min-width: 220px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #output-content {
+      flex: 1;
+      background: var(--bg);
+      padding: 12px;
+      overflow-y: auto;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    #output-content::-webkit-scrollbar { width: 3px; }
+    #output-content::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+    .out-stdout     { color: var(--text); }
+    .out-stderr     { color: var(--red); }
+    .out-exit       { color: var(--muted); font-style: italic; }
+    .out-timeout    { color: var(--orange); }
+    .out-placeholder{ color: var(--border2); font-style: italic; }
+    .out-run-by     { color: var(--accent2); font-size: 11px; margin-bottom: 6px; display: block; }
+
+    #statusbar {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 3px 16px;
+      font-size: 11px;
+      color: var(--muted);
+      font-family: "JetBrains Mono", monospace;
+      flex-shrink: 0;
+    }
+
+    /* ── Overlay base ─────────────────────────────── */
+    .overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(13, 13, 20, 0.82);
+      backdrop-filter: blur(8px);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+    }
+    .overlay.show { display: flex; animation: fadeIn 0.15s ease; }
+
+    /* ── Save / rename modal ─────────────────────── */
+    #modal-overlay { z-index: 250; }
+    #modal {
+      background: var(--panel);
+      border: 1px solid var(--border2);
+      border-radius: 14px;
+      padding: 28px;
+      width: 360px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+    }
+    #modal h3 { margin-bottom: 16px; font-size: 16px; font-weight: 800; }
+    #modal input {
+      width: 100%;
+      background: var(--surface);
+      border: 1.5px solid var(--border2);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: "JetBrains Mono", monospace;
+      outline: none;
+      margin-bottom: 18px;
+    }
+    #modal input:focus { border-color: var(--accent); }
+    #modal .modal-btns { display: flex; gap: 8px; justify-content: flex-end; }
+    .cancel-btn  { background: var(--border2); color: var(--text); }
+    .confirm-btn { background: var(--accent); color: #fff; }
+
+    /* ── Share modal ──────────────────────────────── */
+    #share-modal {
+      background: var(--panel);
+      border: 1px solid var(--border2);
+      border-radius: 14px;
+      padding: 28px;
+      width: 460px;
+      box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+    }
+    #share-modal h3 { margin-bottom: 6px; font-size: 16px; font-weight: 800; }
+    #share-modal p { font-size: 12px; color: var(--muted); margin-bottom: 18px; font-family: "JetBrains Mono", monospace; }
+    #share-link-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+    #share-link-input {
+      flex: 1;
+      background: var(--surface);
+      border: 1.5px solid var(--border2);
+      border-radius: 8px;
+      color: var(--muted);
+      padding: 9px 12px;
+      font-size: 12px;
+      font-family: "JetBrains Mono", monospace;
+      outline: none;
+    }
+    #share-copy-btn { background: var(--accent2); color: var(--bg); flex-shrink: 0; }
+    #share-close-btn { background: var(--border2); color: var(--text); }
+    .share-btns { display: flex; gap: 8px; justify-content: flex-end; }
+    .share-note {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: "JetBrains Mono", monospace;
+      background: rgba(93,230,216,0.06);
+      border: 1px solid rgba(93,230,216,0.18);
+      border-radius: 7px;
+      padding: 8px 12px;
+      margin-bottom: 18px;
+    }
+
+    /* ── Lobby overlay ────────────────────────────── */
+    #lobby-card {
+      background: var(--panel);
+      border: 1px solid var(--border2);
+      border-radius: 20px;
+      padding: 40px 44px;
+      width: 500px;
+      max-height: 82vh;
+      overflow-y: auto;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.6);
+    }
+
+    #lobby-card .lobby-wordmark {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 20px;
+    }
+
+    #lobby-card h2 {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 4px;
+    }
+    #lobby-card .lobby-sub {
+      font-size: 12px;
+      color: var(--muted);
+      font-family: "JetBrains Mono", monospace;
+      margin-bottom: 28px;
+    }
+
+    #lobby-email-section { margin-bottom: 20px; }
+    #lobby-email-input {
+      width: 100%;
+      background: var(--surface);
+      border: 1.5px solid var(--border2);
+      border-radius: 10px;
+      color: var(--text);
+      padding: 11px 14px;
+      font-size: 14px;
+      font-family: "JetBrains Mono", monospace;
+      outline: none;
+      margin-bottom: 10px;
+    }
+    #lobby-email-input:focus { border-color: var(--accent); }
+    #lobby-join-btn {
+      width: 100%;
+      background: var(--accent);
+      color: #fff;
+      padding: 11px;
+      font-size: 13px;
+      font-weight: 700;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+    }
+
+    .lobby-section-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .lobby-section-label span { flex: 1; height: 1px; background: var(--border); }
+
+    .lobby-member-count {
+      font-size: 12px;
+      color: var(--muted);
+      font-family: "JetBrains Mono", monospace;
+    }
+    .lobby-count-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    #lobby-members {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 24px;
+      min-height: 48px;
+    }
+    .member-pill {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-family: "JetBrains Mono", monospace;
+      transition: border-color 0.2s;
+    }
+    .member-pill.online { border-color: rgba(74,222,128,0.3); }
+    .member-pill .pill-avatar {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--bg);
+      flex-shrink: 0;
+      font-family: "Syne", sans-serif;
+    }
+    .member-pill .pill-name { flex: 1; color: var(--text); }
+    .member-pill .pill-tag {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+    }
+    .pill-tag.owner-tag { background: rgba(124,106,247,0.15); color: var(--accent); }
+    .pill-tag.you-tag   { background: rgba(93,230,216,0.12); color: var(--accent2); }
+    .member-pill .pill-status {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--border2);
+      flex-shrink: 0;
+    }
+    .member-pill.online .pill-status { background: var(--green); }
+
+    #lobby-status {
+      font-size: 12px;
+      color: var(--muted);
+      font-family: "JetBrains Mono", monospace;
+      margin-bottom: 16px;
+      text-align: center;
+    }
+
+    #lobby-start-btn {
+      width: 100%;
+      background: var(--green);
+      color: var(--bg);
+      padding: 12px;
+      font-size: 13px;
+      font-weight: 700;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      display: none;
+      font-family: "Syne", sans-serif;
+      letter-spacing: 0.06em;
+    }
+    #lobby-start-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* ── Session-ended / kicked modals ───────────── */
+    #session-ended-modal, #kicked-modal {
+      background: var(--panel);
+      border: 1px solid var(--border2);
+      border-radius: 14px;
+      padding: 36px 40px;
+      width: 380px;
+      text-align: center;
+    }
+    #session-ended-modal .end-icon, #kicked-modal .end-icon { font-size: 36px; margin-bottom: 16px; }
+    #session-ended-modal h3, #kicked-modal h3 { font-size: 18px; font-weight: 800; margin-bottom: 8px; }
+    #session-ended-modal p, #kicked-modal p { font-size: 13px; color: var(--muted); margin-bottom: 24px; font-family: "JetBrains Mono", monospace; }
+    #session-ended-ok, #kicked-ok { background: var(--accent); color: #fff; padding: 10px 28px; }
+
+    /* ── Animations ───────────────────────────────── */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+  </style>
+</head>
+<body class="locked">
+
+<!-- ═══════════════ EMAIL GATE ═══════════════ -->
+<div id="email-gate">
+  <div id="gate-card">
+    <div class="gate-wordmark">PyIDE</div>
+    <h2>Welcome back</h2>
+    <p>Enter your email to access your workspace</p>
+    <input id="gate-email-input" type="email" placeholder="you@example.com" autocomplete="email" />
+    <div id="gate-email-error">Please enter a valid email address</div>
+    <button id="gate-continue-btn">Continue →</button>
+  </div>
+</div>
+
+<!-- ═══════════════ TOP BAR ═══════════════ -->
+<div id="topbar">
+  <span class="logo">PyIDE</span>
+
+  <div id="email-display">
+    <span id="email-display-text"></span>
+    <a id="email-change-link" href="#">change</a>
+  </div>
+
+  <div id="session-badge">
+    <span class="live-dot"></span>
+    Live Session
+    <div id="member-avatars"></div>
+  </div>
+
+  <div class="topbar-spacer"></div>
+
+  <div class="topbar-actions">
+    <button id="leave-session-btn">Leave</button>
+    <button id="new-doc-btn">New</button>
+    <button id="share-btn" disabled>Share</button>
+    <button id="run-btn">&#9654; Run</button>
+    <button id="save-btn">&#128190; Save</button>
+  </div>
+</div>
+
+<!-- ═══════════════ MAIN ═══════════════ -->
+<div id="main">
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <span>Documents</span>
+    </div>
+    <div id="doc-list">
+      <div id="sidebar-empty">Enter email to load documents</div>
+    </div>
+  </div>
+
+  <div id="editor-area">
+    <div id="doc-title-bar">
+      <input id="doc-title-input" type="text" placeholder="Untitled" maxlength="120" />
+    </div>
+    <div id="panes">
+      <div id="editor-pane">
+        <div id="editor-label">Code</div>
+        <div id="editor-wrapper"></div>
+        <div id="stdin-section">
+          <div id="stdin-label">Stdin</div>
+          <textarea id="stdin-input" placeholder="Program input..."></textarea>
+        </div>
+      </div>
+      <div id="output-pane">
+        <div id="output-label">Output</div>
+        <div id="output-content">
+          <span class="out-placeholder">Run your code to see output.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="statusbar">Ready</div>
+
+<!-- ═══════════════ LOBBY OVERLAY ═══════════════ -->
+<div id="lobby-overlay" class="overlay">
+  <div id="lobby-card">
+    <div class="lobby-wordmark">PyIDE — Collab</div>
+    <h2 id="lobby-title">Joining session</h2>
+    <div class="lobby-sub" id="lobby-sub">Connecting...</div>
+
+    <div id="lobby-email-section" style="display:none">
+      <input id="lobby-email-input" type="email" placeholder="your@email.com" autocomplete="email" />
+      <button id="lobby-join-btn">Join →</button>
+    </div>
+
+    <div class="lobby-section-label">Members <span></span></div>
+    <div class="lobby-count-row">
+      <span class="lobby-member-count" id="lobby-count">0 / 5 joined</span>
+    </div>
+
+    <div id="lobby-members"></div>
+
+    <div id="lobby-status"></div>
+
+    <button id="lobby-start-btn">Start Session →</button>
+  </div>
+</div>
+
+<!-- ═══════════════ SAVE MODAL ═══════════════ -->
+<div id="modal-overlay" class="overlay">
+  <div id="modal">
+    <h3>Save Document</h3>
+    <input id="modal-title-input" type="text" placeholder="Enter a title..." maxlength="120" />
+    <div class="modal-btns">
+      <button class="cancel-btn" id="modal-cancel">Cancel</button>
+      <button class="confirm-btn" id="modal-confirm">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ SHARE MODAL ═══════════════ -->
+<div id="share-modal-overlay" class="overlay">
+  <div id="share-modal">
+    <h3>Share Session</h3>
+    <p>Send this link to collaborators — up to 4 others can join</p>
+    <div class="share-note">⚡ Changes in the session are not auto-saved. Use Save to persist them.</div>
+    <div id="share-link-row">
+      <input id="share-link-input" type="text" readonly />
+      <button id="share-copy-btn">Copy</button>
+    </div>
+    <div class="share-btns">
+      <button id="share-close-btn">Done — Open Lobby</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ SESSION ENDED MODAL ═══════════════ -->
+<div id="session-ended-overlay" class="overlay">
+  <div id="session-ended-modal">
+    <div class="end-icon">🔌</div>
+    <h3>Session Ended</h3>
+    <p>The owner disconnected and the session has ended.</p>
+    <button id="session-ended-ok">Back to Editor</button>
+  </div>
+</div>
+
+<!-- ═══════════════ KICKED MODAL ═══════════════ -->
+<div id="kicked-overlay" class="overlay">
+  <div id="kicked-modal">
+    <div class="end-icon">🚫</div>
+    <h3>Removed from Session</h3>
+    <p>The host removed you from this session.</p>
+    <button id="kicked-ok">Back to Editor</button>
+  </div>
+</div>
+
+<script type="module">
+  import { EditorView, keymap, EditorState, indentWithTab, basicSetup, python, oneDark,
+           Decoration, StateEffect, StateField, RangeSetBuilder, WidgetType } from "./codemirror-bundle.js";
+
+  const API = window.location.port === "3000" ? "http://localhost:8000" : "";
+  const MEMBER_COLORS = ["#7c6af7", "#4ade80", "#fb923c", "#a78bfa", "#f87171"];
+
+  // ─── State ────────────────────────────────────────────────
+  let currentEmail   = "";
+  let currentDocId   = null;
+  let documentList   = [];
+
+  let sessionId      = null;
+  let isSessionOwner = false;
+  let sessionMembers = [];
+  let ws             = null;
+  let isInSession    = false;
+  let suppressSync   = false;
+  let codeTimer      = null;
+  let stdinTimer     = null;
+  let cursorTimer    = null;
+
+  // ─── Remote cursor CM6 state (must be before editor) ─────
+  const addCursorEffect    = StateEffect.define();
+  const removeCursorEffect = StateEffect.define();
+
+  class RemoteCursorWidget extends WidgetType {
+    constructor(color, name) { super(); this.color = color; this.name = name; }
+    eq(other) { return other.color === this.color && other.name === this.name; }
+    toDOM() {
+      const beam  = document.createElement("span");
+      beam.className = "cm-remote-cursor";
+      beam.style.setProperty("--rc", this.color);
+      const label = document.createElement("span");
+      label.className   = "cm-remote-cursor-name";
+      label.textContent = this.name;
+      beam.appendChild(label);
+      return beam;
+    }
+    ignoreEvent() { return true; }
+  }
+
+  const remoteCursorField = StateField.define({
+    create() { return new Map(); },
+    update(map, tr) {
+      const next = new Map(map);
+      for (const e of tr.effects) {
+        if (e.is(addCursorEffect))         next.set(e.value.email, e.value);
+        else if (e.is(removeCursorEffect)) next.delete(e.value);
+      }
+      // Don't mapPos: full-doc replacements (code_change sync) map every
+      // cursor to position 0. Cursors self-correct on the next cursor msg.
+      return next;
+    },
+    provide(f) {
+      return EditorView.decorations.from(f, map => {
+        if (!map.size) return Decoration.none;
+        const sorted = [...map.values()].sort((a, b) => a.pos - b.pos);
+        const builder = new RangeSetBuilder();
+        for (const c of sorted)
+          builder.add(c.pos, c.pos,
+            Decoration.widget({ widget: new RemoteCursorWidget(c.color, c.name), side: 1 }));
+        return builder.finish();
+      });
+    },
+  });
+
+  // ─── Editor ───────────────────────────────────────────────
+  const editor = new EditorView({
+    doc: `# Welcome to PyIDE\nname = input("Enter your name: ")\nprint(f"Hello, {name}!")\n`,
+    extensions: [
+      basicSetup,
+      python(),
+      oneDark,
+      keymap.of([indentWithTab]),
+      EditorView.theme({
+        ".cm-scroller": { fontFamily: '"JetBrains Mono","Fira Code",monospace' },
+      }),
+      remoteCursorField,
+      EditorView.updateListener.of((update) => {
+        if (!isInSession || suppressSync) return;
+        if (update.docChanged) {
+          clearTimeout(codeTimer);
+          codeTimer = setTimeout(() => {
+            wsSend({ type: "code_change", code: getCode(), email: currentEmail });
+          }, 300);
+        }
+        if (update.selectionSet) {
+          clearTimeout(cursorTimer);
+          cursorTimer = setTimeout(() => {
+            const head = update.state.selection.main.head;
+            const line = update.state.doc.lineAt(head);
+            wsSend({ type: "cursor", line: line.number, col: head - line.from, email: currentEmail });
+          }, 80);
+        }
+      }),
+    ],
+    parent: document.getElementById("editor-wrapper"),
+  });
+
+  // ─── DOM refs ─────────────────────────────────────────────
+  const gateEl           = document.getElementById("email-gate");
+  const gateEmailInput   = document.getElementById("gate-email-input");
+  const gateEmailError   = document.getElementById("gate-email-error");
+  const gateContinueBtn  = document.getElementById("gate-continue-btn");
+  const emailDisplay     = document.getElementById("email-display");
+  const emailDisplayText = document.getElementById("email-display-text");
+  const emailChangeLink  = document.getElementById("email-change-link");
+  const sessionBadge     = document.getElementById("session-badge");
+  const memberAvatars    = document.getElementById("member-avatars");
+  const runBtn           = document.getElementById("run-btn");
+  const saveBtn          = document.getElementById("save-btn");
+  const newDocBtn        = document.getElementById("new-doc-btn");
+  const shareBtn         = document.getElementById("share-btn");
+  const leaveSessionBtn  = document.getElementById("leave-session-btn");
+  const docList          = document.getElementById("doc-list");
+  const outputContent    = document.getElementById("output-content");
+  const stdinInput       = document.getElementById("stdin-input");
+  const statusbar        = document.getElementById("statusbar");
+  const docTitleInput    = document.getElementById("doc-title-input");
+  const lobbyOverlay     = document.getElementById("lobby-overlay");
+  const lobbyTitle       = document.getElementById("lobby-title");
+  const lobbySub         = document.getElementById("lobby-sub");
+  const lobbyEmailSect   = document.getElementById("lobby-email-section");
+  const lobbyEmailInput  = document.getElementById("lobby-email-input");
+  const lobbyJoinBtn     = document.getElementById("lobby-join-btn");
+  const lobbyMembersEl   = document.getElementById("lobby-members");
+  const lobbyCountEl     = document.getElementById("lobby-count");
+  const lobbyStatus      = document.getElementById("lobby-status");
+  const lobbyStartBtn    = document.getElementById("lobby-start-btn");
+  const modalOverlay     = document.getElementById("modal-overlay");
+  const modalTitleInput  = document.getElementById("modal-title-input");
+  const modalConfirm     = document.getElementById("modal-confirm");
+  const modalCancel      = document.getElementById("modal-cancel");
+  const shareModalOv     = document.getElementById("share-modal-overlay");
+  const shareLinkInput   = document.getElementById("share-link-input");
+  const shareCopyBtn     = document.getElementById("share-copy-btn");
+  const shareCloseBtn    = document.getElementById("share-close-btn");
+  const sessionEndedOv   = document.getElementById("session-ended-overlay");
+  const sessionEndedOk   = document.getElementById("session-ended-ok");
+
+  // ─── Helpers ──────────────────────────────────────────────
+  function isValidEmail(e) {
+    return /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/.test(e);
+  }
+  function setStatus(msg) { statusbar.textContent = msg; }
+  function getCode()      { return editor.state.doc.toString(); }
+  function setCode(code) {
+    editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: code } });
+  }
+  function escHtml(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function formatDate(iso) {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
+        " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    } catch { return ""; }
+  }
+  function wsSend(obj) {
+    if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+  }
+  function memberColor(idx) { return MEMBER_COLORS[idx % MEMBER_COLORS.length]; }
+  function initials(email)  { return (email || "?")[0].toUpperCase(); }
+
+  // ─── Remote cursor helpers ────────────────────────────────
+  function lineColToOffset(line, col) {
+    const doc = editor.state.doc;
+    if (line < 1 || line > doc.lines) return 0;
+    const ln = doc.line(line);
+    return ln.from + Math.min(col, ln.length);
+  }
+
+  function setRemoteCursor(email, pos) {
+    const idx   = sessionMembers.indexOf(email);
+    const color = memberColor(idx >= 0 ? idx : 0);
+    editor.dispatch({ effects: addCursorEffect.of({ email, pos, color, name: email.split("@")[0] }) });
+  }
+
+  function removeRemoteCursor(email) {
+    editor.dispatch({ effects: removeCursorEffect.of(email) });
+  }
+
+  function clearAllRemoteCursors() {
+    const effects = [...editor.state.field(remoteCursorField).keys()]
+      .map(em => removeCursorEffect.of(em));
+    if (effects.length) editor.dispatch({ effects });
+  }
+
+  // ─── Email Gate ───────────────────────────────────────────
+  const SESSION_KEY = "pyide_session";
+  const SESSION_TTL = 24 * 60 * 60 * 1000; // 24 h
+
+  function saveSession(email) {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ email, ts: Date.now() }));
+  }
+  function clearSession() {
+    localStorage.removeItem(SESSION_KEY);
+  }
+  function loadSession() {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      if (!raw) return null;
+      const { email, ts } = JSON.parse(raw);
+      if (Date.now() - ts > SESSION_TTL) { clearSession(); return null; }
+      return email;
+    } catch { return null; }
+  }
+
+  function unlockUI(email) {
+    currentEmail = email;
+    saveSession(email);
+    document.body.classList.remove("locked");
+    gateEl.classList.add("hidden");
+    emailDisplayText.textContent = email;
+    emailDisplay.classList.add("show");
+    fetchDocuments(email);
+
+    const sid = new URLSearchParams(window.location.search).get("session");
+    if (sid) openLobby(sid);
+  }
+
+  function lockUI() {
+    clearSession();
+    currentEmail = "";
+    currentDocId = null;
+    documentList = [];
+    isInSession  = false;
+    document.body.classList.add("locked");
+    gateEl.classList.remove("hidden");
+    emailDisplay.classList.remove("show");
+    sessionBadge.classList.remove("show");
+    leaveSessionBtn.style.display = "none";
+    lobbyOverlay.classList.remove("show");
+    if (ws) { ws.close(); ws = null; }
+    updateShareBtn();
+    renderDocList();
+  }
+
+  function attemptGateContinue() {
+    const email = gateEmailInput.value.trim();
+    if (!isValidEmail(email)) {
+      gateEmailInput.classList.add("error");
+      gateEmailError.classList.add("show");
+      return;
+    }
+    gateEmailInput.classList.remove("error");
+    gateEmailError.classList.remove("show");
+    unlockUI(email);
+  }
+
+  gateEmailInput.addEventListener("input", () => {
+    gateEmailInput.classList.remove("error");
+    gateEmailError.classList.remove("show");
+  });
+  gateEmailInput.addEventListener("keydown", e => { if (e.key === "Enter") attemptGateContinue(); });
+  gateContinueBtn.addEventListener("click", attemptGateContinue);
+  emailChangeLink.addEventListener("click", e => {
+    e.preventDefault();
+    lockUI();
+    gateEmailInput.value = "";
+    setTimeout(() => gateEmailInput.focus(), 80);
+  });
+
+  // ─── Document helpers ────────────────────────────────────
+  function updateShareBtn() {
+    shareBtn.disabled = !currentDocId || isInSession;
+  }
+
+  function renderDocList() {
+    if (!documentList.length) {
+      docList.innerHTML = `<div id="sidebar-empty">${
+        currentEmail ? "No documents yet. Save to create one." : "Enter email to load documents"
+      }</div>`;
+      return;
+    }
+    docList.innerHTML = "";
+    for (const doc of documentList) {
+      const card = document.createElement("div");
+      card.className = "doc-card" + (doc.id === currentDocId ? " active" : "");
+      card.dataset.id = doc.id;
+      card.innerHTML = `
+        <div class="doc-info">
+          <div class="doc-title">${escHtml(doc.title)}</div>
+          <div class="doc-date">${formatDate(doc.updated_at)}</div>
+        </div>
+        <button class="delete-btn" title="Delete" data-id="${doc.id}">✕</button>`;
+      card.addEventListener("click", e => {
+        if (e.target.classList.contains("delete-btn")) return;
+        loadDocument(doc);
+      });
+      card.querySelector(".delete-btn").addEventListener("click", e => {
+        e.stopPropagation();
+        deleteDocument(doc.id);
+      });
+      docList.appendChild(card);
+    }
+  }
+
+  async function fetchDocuments(email) {
+    try {
+      const resp = await fetch(`${API}/documents/${encodeURIComponent(email)}`);
+      if (!resp.ok) throw new Error("fetch failed");
+      documentList = await resp.json();
+      renderDocList();
+    } catch (err) {
+      setStatus("Error loading documents: " + err.message);
+    }
+  }
+
+  async function createDocument(email, title, code, stdin) {
+    const resp = await fetch(`${API}/documents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, title, code, stdin }),
+    });
+    if (!resp.ok) { const e = await resp.json(); throw new Error(e.detail || "Save failed"); }
+    return resp.json();
+  }
+
+  async function updateDocument(docId, title, code, stdin) {
+    const resp = await fetch(`${API}/documents/${docId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, code, stdin }),
+    });
+    if (!resp.ok) { const e = await resp.json(); throw new Error(e.detail || "Update failed"); }
+    return resp.json();
+  }
+
+  async function deleteDocument(docId) {
+    if (!confirm("Delete this document?")) return;
+    try {
+      const resp = await fetch(`${API}/documents/${docId}`, { method: "DELETE" });
+      if (!resp.ok) throw new Error("Delete failed");
+      if (currentDocId === docId) newDocument();
+      await fetchDocuments(currentEmail);
+      setStatus("Document deleted.");
+    } catch (err) {
+      setStatus("Error: " + err.message);
+    }
+  }
+
+  function loadDocument(doc) {
+    if (isInSession) { setStatus("Leave the session before switching documents."); return; }
+    currentDocId = doc.id;
+    docTitleInput.value = doc.title;
+    setCode(doc.code);
+    stdinInput.value = doc.stdin || "";
+    renderDocList();
+    updateShareBtn();
+    setStatus(`Loaded: ${doc.title}`);
+  }
+
+  function newDocument() {
+    currentDocId = null;
+    docTitleInput.value = "";
+    setCode(`# Welcome to PyIDE\nname = input("Enter your name: ")\nprint(f"Hello, {name}!")\n`);
+    stdinInput.value = "";
+    renderDocList();
+    updateShareBtn();
+    setStatus("New document");
+  }
+
+  // ─── Run ─────────────────────────────────────────────────
+  async function runCode() {
+    const code  = getCode();
+    const stdin = stdinInput.value;
+    outputContent.innerHTML = '<span class="out-placeholder">Running...</span>';
+    document.body.classList.add("running");
+    setStatus("Running...");
+    try {
+      const resp = await fetch(`${API}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, stdin }),
+      });
+      const data = await resp.json();
+      if (isInSession) {
+        wsSend({ type: "run_result", ...data, triggered_by: currentEmail });
+      } else {
+        renderOutput(data, null);
+        setStatus(`Done — exit code ${data.exit_code}${data.timed_out ? " (timed out)" : ""}`);
+      }
+    } catch (err) {
+      outputContent.innerHTML = `<span class="out-stderr">Error: ${escHtml(err.message)}</span>`;
+      setStatus("Run failed");
+    } finally {
+      document.body.classList.remove("running");
+    }
+  }
+
+  function renderOutput(data, triggeredBy) {
+    outputContent.innerHTML = "";
+    if (triggeredBy) {
+      const byEl = document.createElement("span");
+      byEl.className = "out-run-by";
+      byEl.textContent = `▶ Run by: ${triggeredBy}`;
+      outputContent.appendChild(byEl);
+    }
+    if (data.timed_out) {
+      outputContent.innerHTML += `<span class="out-timeout">⏱ Timed out after 10 seconds\n</span>`;
+    }
+    if (data.stdout) {
+      const el = document.createElement("span");
+      el.className = "out-stdout";
+      el.textContent = data.stdout;
+      outputContent.appendChild(el);
+    }
+    if (data.stderr) {
+      const el = document.createElement("span");
+      el.className = "out-stderr";
+      el.textContent = data.stderr;
+      outputContent.appendChild(el);
+    }
+    const exitEl = document.createElement("span");
+    exitEl.className = "out-exit";
+    exitEl.textContent = `\n─── exit ${data.exit_code} ───`;
+    outputContent.appendChild(exitEl);
+    outputContent.scrollTop = outputContent.scrollHeight;
+  }
+
+  // ─── Save ─────────────────────────────────────────────────
+  async function saveDocument() {
+    if (!currentEmail) return;
+    const code  = getCode();
+    const stdin = stdinInput.value;
+    const title = docTitleInput.value.trim();
+
+    if (currentDocId) {
+      try {
+        const updated = await updateDocument(currentDocId, title || "Untitled", code, stdin);
+        documentList = documentList.map(d => d.id === currentDocId ? updated : d);
+        renderDocList();
+        setStatus(`Saved: ${updated.title}`);
+      } catch (err) { setStatus("Save error: " + err.message); }
+    } else {
+      if (!title) {
+        openSaveModal(async (t) => {
+          try {
+            docTitleInput.value = t;
+            const doc = await createDocument(currentEmail, t, code, stdin);
+            currentDocId = doc.id;
+            await fetchDocuments(currentEmail);
+            updateShareBtn();
+            setStatus(`Saved: ${doc.title}`);
+          } catch (err) { setStatus("Save error: " + err.message); }
+        });
+        return;
+      }
+      try {
+        const doc = await createDocument(currentEmail, title, code, stdin);
+        currentDocId = doc.id;
+        await fetchDocuments(currentEmail);
+        updateShareBtn();
+        setStatus(`Saved: ${doc.title}`);
+      } catch (err) { setStatus("Save error: " + err.message); }
+    }
+  }
+
+  let _modalCb = null;
+  function openSaveModal(cb) {
+    _modalCb = cb;
+    modalTitleInput.value = "";
+    modalOverlay.classList.add("show");
+    setTimeout(() => modalTitleInput.focus(), 50);
+  }
+  modalConfirm.addEventListener("click", () => {
+    const t = modalTitleInput.value.trim() || "Untitled";
+    modalOverlay.classList.remove("show");
+    if (_modalCb) _modalCb(t);
+    _modalCb = null;
+  });
+  modalCancel.addEventListener("click", () => {
+    modalOverlay.classList.remove("show");
+    _modalCb = null;
+  });
+  modalTitleInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") modalConfirm.click();
+    if (e.key === "Escape") modalCancel.click();
+  });
+
+  // ─── Share ────────────────────────────────────────────────
+  shareBtn.addEventListener("click", async () => {
+    if (!currentDocId) return;
+    try {
+      const resp = await fetch(`${API}/sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ owner_email: currentEmail, doc_id: currentDocId }),
+      });
+      if (!resp.ok) throw new Error("Failed to create session");
+      const { session_id } = await resp.json();
+      sessionId = session_id;
+      isSessionOwner = true;
+      const link = `${window.location.origin}${window.location.pathname}?session=${session_id}`;
+      shareLinkInput.value = link;
+      shareModalOv.classList.add("show");
+    } catch (err) {
+      setStatus("Error creating session: " + err.message);
+    }
+  });
+
+  shareCopyBtn.addEventListener("click", () => {
+    navigator.clipboard.writeText(shareLinkInput.value).then(() => {
+      shareCopyBtn.textContent = "Copied!";
+      setTimeout(() => { shareCopyBtn.textContent = "Copy"; }, 2000);
+    });
+  });
+
+  shareCloseBtn.addEventListener("click", () => {
+    shareModalOv.classList.remove("show");
+    if (sessionId && isSessionOwner) openLobby(sessionId);
+  });
+
+  // ─── Lobby ────────────────────────────────────────────────
+  async function openLobby(sid) {
+    sessionId = sid;
+    leaveSessionBtn.style.display = "none"; // never show Leave during lobby
+    lobbyOverlay.classList.add("show");
+
+    if (!currentEmail) {
+      lobbyTitle.textContent   = "Join Session";
+      lobbySub.textContent     = "Enter your email to join";
+      lobbyEmailSect.style.display = "block";
+      lobbyStatus.textContent  = "";
+      return;
+    }
+
+    lobbyEmailSect.style.display = "none";
+    lobbyStatus.textContent = "Connecting...";
+
+    try {
+      const meta = await fetch(`${API}/sessions/${sid}`).then(r => r.json());
+      isSessionOwner = meta.owner_email === currentEmail;
+      lobbyTitle.textContent = isSessionOwner ? "Your Session" : "Joining Session";
+      lobbySub.textContent   = isSessionOwner
+        ? "Share the link, then start when ready"
+        : `Hosted by ${meta.owner_email}`;
+    } catch {
+      lobbyStatus.textContent = "Could not load session info.";
+    }
+
+    connectWS(sid, currentEmail);
+  }
+
+  lobbyJoinBtn.addEventListener("click", () => {
+    const email = lobbyEmailInput.value.trim();
+    if (!isValidEmail(email)) { lobbyEmailInput.style.borderColor = "var(--red)"; return; }
+    unlockUI(email);
+    lobbyEmailSect.style.display = "none";
+    lobbyStatus.textContent = "Connecting...";
+    connectWS(sessionId, email);
+  });
+
+  lobbyStartBtn.addEventListener("click", () => {
+    wsSend({ type: "start_session", email: currentEmail });
+  });
+
+  leaveSessionBtn.addEventListener("click", () => {
+    if (!confirm("Leave the session?")) return;
+    clearAllRemoteCursors();
+    isInSession = false;
+    sessionBadge.classList.remove("show");
+    leaveSessionBtn.style.display = "none";
+    newDocBtn.style.display = "";
+    shareBtn.style.display  = "";
+    if (ws) { ws.close(); ws = null; }
+    updateShareBtn();
+    setStatus("Left session.");
+    // Remove ?session= from URL without reload
+    history.replaceState({}, "", window.location.pathname);
+  });
+
+  // ─── WebSocket ───────────────────────────────────────────
+  function connectWS(sid, email) {
+    const proto  = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const host   = window.location.port === "3000" ? "localhost:8000" : window.location.host;
+    ws = new WebSocket(`${proto}//${host}/ws/${sid}/${encodeURIComponent(email)}`);
+
+    ws.onopen  = () => { lobbyStatus.textContent = isSessionOwner
+      ? "Waiting for others to join..."
+      : "Waiting for owner to start..."; };
+    ws.onclose = () => {
+      setTimeout(() => { if (isInSession) connectWS(sid, email); }, 3000);
+    };
+    ws.onmessage = e => handleWS(JSON.parse(e.data));
+  }
+
+  function handleWS(msg) {
+    switch (msg.type) {
+
+      case "lobby_update": {
+        sessionMembers = msg.members;
+        renderLobbyMembers(msg.members);
+        if (isSessionOwner) {
+          lobbyStartBtn.style.display = "block";
+          lobbyStartBtn.disabled = msg.members.length < 2;
+          lobbyStatus.textContent = msg.members.length < 2
+            ? "Waiting for others to join..."
+            : "Ready — start when everyone is here.";
+        }
+        break;
+      }
+
+      case "session_started": {
+        isInSession = true;
+        lobbyOverlay.classList.remove("show");
+        suppressSync = true;
+        setCode(msg.code || "");
+        stdinInput.value = msg.stdin || "";
+        suppressSync = false;
+        renderSessionBadge();
+        leaveSessionBtn.style.display = "inline-block";
+        newDocBtn.style.display  = "none";
+        shareBtn.style.display   = "none";
+        setStatus("🟢 Live session — changes sync to all members");
+        history.replaceState({}, "", `?session=${sessionId}`);
+        break;
+      }
+
+      case "code_change": {
+        if (msg.email !== currentEmail) {
+          removeRemoteCursor(msg.email); // will re-appear on next cursor msg
+          suppressSync = true;
+          setCode(msg.code);
+          suppressSync = false;
+        }
+        break;
+      }
+
+      case "stdin_change": {
+        if (msg.email !== currentEmail) stdinInput.value = msg.stdin;
+        break;
+      }
+
+      case "run_result": {
+        renderOutput(msg, msg.triggered_by);
+        setStatus(`Run by ${msg.triggered_by} — exit ${msg.exit_code}`);
+        break;
+      }
+
+      case "cursor": {
+        if (msg.email !== currentEmail && isInSession) {
+          setRemoteCursor(msg.email, lineColToOffset(msg.line, msg.col));
+        }
+        const idx = sessionMembers.indexOf(msg.email);
+        const av  = memberAvatars.children[idx];
+        if (av) {
+          av.style.transform = "scale(1.3)";
+          setTimeout(() => { av.style.transform = ""; }, 400);
+        }
+        break;
+      }
+
+      case "member_disconnected": {
+        sessionMembers = sessionMembers.filter(m => m !== msg.email);
+        removeRemoteCursor(msg.email);
+        if (isInSession) renderSessionBadge();
+        break;
+      }
+
+      case "session_ended": {
+        clearAllRemoteCursors();
+        isInSession = false;
+        ws = null;
+        lobbyOverlay.classList.remove("show");
+        sessionBadge.classList.remove("show");
+        leaveSessionBtn.style.display = "none";
+        newDocBtn.style.display = "";
+        shareBtn.style.display  = "";
+        updateShareBtn();
+        sessionEndedOv.classList.add("show");
+        history.replaceState({}, "", window.location.pathname);
+        break;
+      }
+
+      case "kicked": {
+        clearAllRemoteCursors();
+        isInSession = false;
+        ws = null;
+        lobbyOverlay.classList.remove("show");
+        sessionBadge.classList.remove("show");
+        leaveSessionBtn.style.display = "none";
+        newDocBtn.style.display = "";
+        shareBtn.style.display  = "";
+        updateShareBtn();
+        document.getElementById("kicked-overlay").classList.add("show");
+        history.replaceState({}, "", window.location.pathname);
+        break;
+      }
+
+      case "error":
+        lobbyStatus.textContent = "Error: " + msg.message;
+        setStatus("Session error: " + msg.message);
+        break;
+    }
+  }
+
+  function renderLobbyMembers(members) {
+    lobbyCountEl.textContent = `${members.length} / 5 joined`;
+    lobbyMembersEl.innerHTML = "";
+    members.forEach((email, i) => {
+      const pill = document.createElement("div");
+      pill.className = "member-pill online";
+      pill.dataset.email = email;
+      const isOwner   = i === 0;
+      const isYou     = email === currentEmail;
+      const canKick   = isSessionOwner && !isOwner && !isYou;
+      pill.innerHTML = `
+        <div class="pill-avatar" style="background:${memberColor(i)}">${initials(email)}</div>
+        <span class="pill-name">${escHtml(email)}</span>
+        ${isOwner ? '<span class="pill-tag owner-tag">Owner</span>' : ""}
+        ${isYou   ? '<span class="pill-tag you-tag">You</span>'    : ""}
+        <span class="pill-status"></span>
+        ${canKick ? `<button class="pill-kick" data-email="${escHtml(email)}">Kick</button>` : ""}`;
+      if (canKick) {
+        pill.querySelector(".pill-kick").addEventListener("click", e => {
+          e.stopPropagation();
+          kickMember(email);
+        });
+      }
+      lobbyMembersEl.appendChild(pill);
+    });
+  }
+
+  function renderSessionBadge() {
+    sessionBadge.classList.add("show");
+    memberAvatars.innerHTML = "";
+    sessionMembers.forEach((email, i) => {
+      const wrap = document.createElement("div");
+      wrap.className = "avatar-wrap";
+
+      const av = document.createElement("div");
+      av.className = "member-avatar";
+      av.style.background = memberColor(i);
+      av.textContent = initials(email);
+      av.title = email;
+
+      const canKick = isSessionOwner && email !== currentEmail;
+      if (canKick || !isSessionOwner) {
+        const pop = document.createElement("div");
+        pop.className = "avatar-popover";
+        pop.innerHTML = `<div class="pop-name">${escHtml(email)}</div>
+          ${canKick ? `<button class="kick-btn">Kick from session</button>` : ""}`;
+        if (canKick) {
+          pop.querySelector(".kick-btn").addEventListener("click", e => {
+            e.stopPropagation();
+            pop.classList.remove("show");
+            kickMember(email);
+          });
+        }
+        av.addEventListener("click", e => {
+          e.stopPropagation();
+          // Close all other popovers
+          document.querySelectorAll(".avatar-popover.show").forEach(p => p.classList.remove("show"));
+          pop.classList.toggle("show");
+        });
+        wrap.appendChild(av);
+        wrap.appendChild(pop);
+      } else {
+        wrap.appendChild(av);
+      }
+      memberAvatars.appendChild(wrap);
+    });
+  }
+
+  // Close avatar popovers when clicking outside
+  document.addEventListener("click", () => {
+    document.querySelectorAll(".avatar-popover.show").forEach(p => p.classList.remove("show"));
+  });
+
+  // ─── Session-ended modal ─────────────────────────────────
+  sessionEndedOk.addEventListener("click", () => {
+    sessionEndedOv.classList.remove("show");
+    newDocument();
+  });
+
+  // ─── Kick ────────────────────────────────────────────────
+  function kickMember(email) {
+    if (!confirm(`Kick ${email} from the session?`)) return;
+    wsSend({ type: "kick_member", email });
+    // Optimistic update — remove immediately without waiting for lobby_update
+    sessionMembers = sessionMembers.filter(m => m !== email);
+    renderLobbyMembers(sessionMembers);
+    if (isInSession) renderSessionBadge();
+  }
+
+  const kickedOv = document.getElementById("kicked-overlay");
+  document.getElementById("kicked-ok").addEventListener("click", () => {
+    kickedOv.classList.remove("show");
+    newDocument();
+    history.replaceState({}, "", window.location.pathname);
+  });
+
+  // ─── Stdin sync ──────────────────────────────────────────
+  stdinInput.addEventListener("input", () => {
+    if (!isInSession) return;
+    clearTimeout(stdinTimer);
+    stdinTimer = setTimeout(() => {
+      wsSend({ type: "stdin_change", stdin: stdinInput.value, email: currentEmail });
+    }, 300);
+  });
+
+  // ─── Keyboard shortcuts ──────────────────────────────────
+  document.addEventListener("keydown", e => {
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.key === "Enter") { e.preventDefault(); runCode(); }
+    if (mod && e.key === "s")     { e.preventDefault(); saveDocument(); }
+  });
+
+  // ─── Button listeners ────────────────────────────────────
+  runBtn.addEventListener("click", runCode);
+  saveBtn.addEventListener("click", saveDocument);
+  newDocBtn.addEventListener("click", newDocument);
+
+  // ─── Init ────────────────────────────────────────────────
+  const savedEmail = loadSession();
+  if (savedEmail) {
+    unlockUI(savedEmail);
+    setStatus("Ready");
+  } else {
+    setStatus("Ready — enter your email to get started");
+    setTimeout(() => gateEmailInput.focus(), 100);
+  }
+</script>
+</body>
+</html>
