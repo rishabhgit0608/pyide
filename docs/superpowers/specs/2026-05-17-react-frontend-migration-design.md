@@ -41,6 +41,7 @@ frontend/
 ├── src/
 │   ├── main.jsx
 │   ├── App.jsx
+│   ├── index.css                      ← migrated from index.html <style>
 │   ├── components/
 │   │   ├── EmailGate.jsx
 │   │   ├── Sidebar.jsx
@@ -57,7 +58,7 @@ frontend/
 │   │   └── useSession.js
 │   └── context/
 │       └── AppContext.jsx
-├── index.html
+├── index.html                         ← minimal Vite shell (includes Google Fonts <link> tags)
 ├── vite.config.js
 └── package.json
 
@@ -82,6 +83,8 @@ The old `frontend/index.html` and `frontend/codemirror-bundle.js` are removed. T
   sessionStarted,   // boolean
   isOwner,          // boolean
   setSession,       // setter for session fields
+  isRunning,        // boolean — mirrors body.running class; owned here for Toolbar/OutputPane
+  setIsRunning,
 }
 ```
 
@@ -94,23 +97,30 @@ The old `frontend/index.html` and `frontend/codemirror-bundle.js` are removed. T
 - `OutputPane.jsx` — owns output display via `useState`.
 - `Sidebar.jsx` — owns document list via `useDocuments` hook.
 
+### Body class management
+
+The existing CSS uses `body.locked` (fades layout before email is set) and `body.running` (disables run button during execution). In React:
+
+- `body.locked` — `App.jsx` adds/removes this class on `document.body` when `email` changes.
+- `body.running` — `Toolbar.jsx` adds/removes this class when a run starts/completes, driven by `isRunning` in context.
+
 ---
 
 ## Component Responsibilities
 
 | Component | Responsibility |
 |---|---|
-| `App.jsx` | Guards email gate. Reads `?session=` from URL to auto-join session. Renders layout. |
+| `App.jsx` | Manages `body.locked`. Reads `?session=` from URL to auto-join. Guards email gate. Renders layout. |
 | `EmailGate.jsx` | Email input + regex validation. On submit: saves to localStorage, sets context email. |
-| `Sidebar.jsx` | Document list. New/load/delete actions. Session member avatars with kick popover. |
-| `Toolbar.jsx` | Run, Save, Share buttons. Calls `/run` HTTP, triggers save flow, opens share modal. |
-| `Editor.jsx` | CodeMirror 6 instance (uncontrolled). Remote cursor decorations. Debounced session sync. |
+| `Sidebar.jsx` | Document list. New/load/delete. Guards `loadDocument` while in session. Session member avatars: owner gets kick popover, non-owners get email-display popover. |
+| `Toolbar.jsx` | Run, Save, Share buttons. Manages `body.running`. Share button hidden during active session. New button hidden during active session. On run in session: broadcasts `run_result` via `sendMessage`. |
+| `Editor.jsx` | CodeMirror 6 instance (uncontrolled). Inline title input (`#doc-title-input`, max 120 chars). Remote cursor decorations. Debounced session sync. |
 | `StdinPane.jsx` | Controlled textarea. Syncs via session if active. |
-| `OutputPane.jsx` | Renders stdout/stderr/timeout/exit code with colors. Shows "Run by:" in session. |
+| `OutputPane.jsx` | Renders stdout/stderr/timeout/exit code as React elements (no innerHTML). Shows "Run by:" in session. |
 | `SaveModal.jsx` | Title input dialog on first save. |
 | `ShareModal.jsx` | Session link display + copy button. |
-| `LobbyOverlay.jsx` | Member list while waiting. Owner sees Start button. |
-| `SessionModal.jsx` | "Session ended" and "You were kicked" dialogs. |
+| `LobbyOverlay.jsx` | Member list while waiting. Owner sees Start button. If no email on session URL entry: shows email input, on submit calls setEmail + fetchDocuments + connectWS. |
+| `SessionModal.jsx` | "Session ended" and "You were kicked" dialogs. On dismiss: clears session from URL via `history.replaceState`. |
 
 ---
 
@@ -127,26 +137,32 @@ Wraps all `/documents` API calls. Returns:
 - `saveDoc(title, code, stdin)` — POST if no currentDoc.id, PUT otherwise
 - `loadDoc(doc)` — sets currentDoc, pushes code/stdin into Editor/Stdin via callback refs
 
-### `useSession(sessionId, email, editorRef)`
+### `useSession(sessionId, email, editorRef, suppressSyncRef)`
 
-Owns the WebSocket lifecycle. Opens on mount when `sessionId` is set, closes on unmount.
+Owns the WebSocket lifecycle. Opens when `sessionId` is set, closes on unmount. Implements 3-second auto-reconnect on unexpected close (matching current behavior): if `sessionId` is still set after `ws.onclose`, schedules reconnect after 3s. Cleanup on unmount sets a `destroyed` flag that prevents the reconnect timer from firing.
+
+`suppressSyncRef` is created in `Editor.jsx` and passed into `useSession` — both share the **same ref object** so echo suppression works correctly across the hook boundary.
 
 Returns:
 
 ```js
-{ sendMessage, runResult }
+{ sendMessage, runResult, setRunResult }
 ```
 
 Incoming message handling:
-- `code_change` → dispatch CM6 transaction directly on `editorRef.current` with `suppressSync = true`
-- `stdin_change` → call stdin setter via ref
-- `cursor` → update CM6 remote cursor StateField
-- `lobby_update` → update context `sessionMembers`
-- `session_started` → set context `sessionStarted = true`, load code/stdin into editor
-- `run_result` → set `runResult` state (OutputPane reads this)
-- `session_ended` → show SessionModal "ended"
-- `kicked` → show SessionModal "kicked"
-- `member_disconnected` → update context `sessionMembers`
+
+| Message type | Action |
+|---|---|
+| `code_change` | Set `suppressSyncRef.current = true`, dispatch CM6 transaction on `editorRef.current`, reset ref |
+| `stdin_change` | Call stdin setter via ref |
+| `cursor` | Update CM6 remote cursor StateField |
+| `lobby_update` | Update context `sessionMembers` |
+| `session_started` | Set context `sessionStarted = true`, update URL via `history.replaceState(?session=...)`, load code/stdin into editor |
+| `run_result` | Set `runResult` state (OutputPane reads this) |
+| `session_ended` | Show SessionModal "ended" |
+| `kicked` | Show SessionModal "kicked" |
+| `member_disconnected` | Update context `sessionMembers` |
+| `error` | Display error in lobby status area or statusbar depending on session phase |
 
 ---
 
@@ -154,45 +170,85 @@ Incoming message handling:
 
 ### 1. CodeMirror is uncontrolled
 
-`Editor.jsx` creates one `EditorView` on mount and holds it in a `ref`. It never receives `code` as a prop after mount. Remote updates arrive via `useSession` which calls `editorRef.current.dispatch(transaction)` directly — bypassing React entirely.
+`Editor.jsx` creates one `EditorView` on mount and holds it in a `useRef`. It never receives `code` as a prop after mount. Remote updates arrive via `useSession` which calls `editorRef.current.dispatch(transaction)` directly — bypassing React entirely.
 
-### 2. Echo suppression
+### 2. Echo suppression — shared ref
 
-A `suppressSync` ref (not state, to avoid re-renders) lives in `Editor.jsx` or `useSession`. When a remote `code_change` is applied via dispatch, `suppressSync` is set to `true`. The editor's `updateListener` checks this flag before broadcasting and resets it.
+`suppressSyncRef` is a `useRef(false)` created inside `Editor.jsx`. It is passed as a prop to `useSession`. This ensures both the `updateListener` (inside `Editor.jsx`) and the incoming message handler (inside `useSession`) share the exact same ref object. Flow:
 
-### 3. Vite proxy replaces API_BASE hack
+1. Remote `code_change` arrives in `useSession`
+2. `suppressSyncRef.current = true`
+3. `editorRef.current.dispatch(replaceTransaction)` — fires `updateListener` synchronously
+4. `updateListener` sees `suppressSyncRef.current === true`, skips broadcast, sets it back to `false`
 
-`vite.config.js` proxies `/documents`, `/sessions`, `/run`, `/ws` to `http://localhost:8000` in dev. In production the build is served by FastAPI at the same origin, so no prefix is needed. All fetch calls use relative paths (e.g. `/run`).
+Because `dispatch()` is synchronous, steps 3 and 4 complete before step 4's reset is needed.
+
+### 3. Vite config — correct outDir and proxy
+
+`vite.config.js` lives at the repo root (not inside `frontend/`). With `root: 'frontend'`, Vite resolves `outDir: 'dist'` relative to `root`, placing output at `frontend/dist/` as intended. The old `window.location.port === "3000"` API_BASE hack is deleted entirely — the Vite proxy makes it unnecessary.
 
 ```js
-// vite.config.js
-export default {
+// vite.config.js  (at repo root)
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
   root: 'frontend',
-  build: { outDir: '../dist' },  // relative to root
+  plugins: [react()],
+  build: { outDir: 'dist' },   // resolves to frontend/dist/
   server: {
+    port: 5173,
     proxy: {
       '/documents': 'http://localhost:8000',
-      '/sessions': 'http://localhost:8000',
-      '/run': 'http://localhost:8000',
+      '/sessions':  'http://localhost:8000',
+      '/run':       'http://localhost:8000',
       '/ws': { target: 'ws://localhost:8000', ws: true },
     }
   }
-}
+})
 ```
 
-FastAPI's `StaticFiles` mount path changes from `frontend/` to `frontend/dist/`.
+### 4. FastAPI StaticFiles — absolute path
 
-### 4. React StrictMode + WebSocket
+Use `pathlib.Path` to avoid CWD-dependent failures:
 
-`useSession` cleanup must fully close the WebSocket (`ws.close()`) on unmount. In StrictMode dev, the hook will mount-unmount-remount — this is fine as long as cleanup is correct. Do not suppress StrictMode.
+```python
+# backend/main.py
+import pathlib
+_frontend = pathlib.Path(__file__).parent.parent / "frontend" / "dist"
+app.mount("/", StaticFiles(directory=_frontend, html=True), name="frontend")
+```
 
-### 5. Member colors
+### 5. React StrictMode + WebSocket reconnect
 
-`MEMBER_COLORS` array (5 colors) and color assignment move into `useSession`. Color is assigned when a member joins and stored in `sessionMembers` in context.
+`useSession` cleanup sets a `destroyed` ref to `true` and calls `ws.close()`. The 3-second reconnect timer checks `destroyed` before reconnecting. StrictMode double-mount causes connect → close → reconnect in dev — this is acceptable behavior and StrictMode must not be suppressed.
 
-### 6. CSS migration
+### 6. URL management via history.replaceState
 
-All styles currently in `<style>` tag in `index.html` move to `src/index.css`, imported in `main.jsx`. No CSS modules, no Tailwind — plain CSS to preserve exact styling with minimal changes.
+These components own URL updates:
+
+| Event | Who calls replaceState | New URL |
+|---|---|---|
+| Session started | `useSession` on `session_started` | `?session={id}` |
+| Session ended | `SessionModal.jsx` on dismiss | pathname only |
+| Kicked | `SessionModal.jsx` on dismiss | pathname only |
+| Owner leaves | `Toolbar.jsx` leave action | pathname only |
+
+### 7. CSS and fonts
+
+All styles migrate from `<style>` in the old `index.html` to `src/index.css`, imported in `main.jsx`. The new minimal Vite `frontend/index.html` shell includes the two Google Fonts `<link>` tags (JetBrains Mono + Syne preconnect + stylesheet) exactly as in the original.
+
+### 8. OutputPane renders React elements, not innerHTML
+
+The current code uses `innerHTML +=` with manually constructed `<span>` strings. `OutputPane.jsx` must use React elements (`<span className="...">`) instead. JSX escapes text content automatically, replacing the manual `escHtml()` utility. `dangerouslySetInnerHTML` must not be used.
+
+### 9. Utility functions
+
+`formatDate` (used in document list) and `MEMBER_COLORS` (used in session) move to `src/utils.js`. `escHtml` is deleted (JSX handles escaping).
+
+### 10. window.confirm() calls preserved
+
+`deleteDocument`, `leaveSession`, and `kickMember` all use `window.confirm()`. These are preserved as-is in the React migration.
 
 ---
 
@@ -200,22 +256,17 @@ All styles currently in `<style>` tag in `index.html` move to `src/index.css`, i
 
 **Dev:**
 ```bash
-cd frontend && npm run dev   # Vite on :5173, proxies API to :8000
-cd backend && uvicorn main:app --reload  # FastAPI on :8000
+# Terminal 1
+cd backend && uvicorn main:app --reload   # FastAPI on :8000
+
+# Terminal 2
+npm run dev   # from repo root, Vite on :5173, proxies API to :8000
 ```
 
 **Production build:**
 ```bash
-cd frontend && npm run build  # outputs to frontend/dist/
+npm run build   # outputs to frontend/dist/
 # FastAPI serves frontend/dist/ at /
-```
-
-**FastAPI change** (`backend/main.py`):
-```python
-# Before
-app.mount("/", StaticFiles(directory="frontend", html=True), name="static")
-# After
-app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="static")
 ```
 
 ---
@@ -234,12 +285,13 @@ app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="static")
 |---|---|
 | `frontend/src/main.jsx` | New |
 | `frontend/src/App.jsx` | New |
+| `frontend/src/index.css` | New (migrated from index.html `<style>`) |
 | `frontend/src/components/*.jsx` | New (10 files) |
 | `frontend/src/hooks/useDocuments.js` | New |
 | `frontend/src/hooks/useSession.js` | New |
 | `frontend/src/context/AppContext.jsx` | New |
-| `frontend/src/index.css` | New (migrated from index.html `<style>`) |
-| `frontend/index.html` | New (Vite entry, minimal shell) |
-| `frontend/vite.config.js` | New |
-| `frontend/package.json` | New |
-| `backend/main.py` | 1-line change: StaticFiles path |
+| `frontend/src/utils.js` | New (formatDate, MEMBER_COLORS) |
+| `frontend/index.html` | New (minimal Vite shell with Google Fonts links) |
+| `vite.config.js` | New (at repo root) |
+| `package.json` | New (at repo root) |
+| `backend/main.py` | 1-line change: StaticFiles uses pathlib path to `frontend/dist` |
