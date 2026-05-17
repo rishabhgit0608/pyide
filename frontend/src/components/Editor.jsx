@@ -1,5 +1,5 @@
 import { useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
-import { EditorView, keymap, Decoration, WidgetType } from '@codemirror/view';
+import { EditorView, keymap, Decoration, WidgetType, lineNumbers } from '@codemirror/view';
 import { EditorState, StateEffect, StateField, RangeSetBuilder } from '@codemirror/state';
 import { indentWithTab } from '@codemirror/commands';
 import { basicSetup } from 'codemirror';
@@ -111,8 +111,10 @@ const Editor = forwardRef(function Editor(
         python(),
         oneDark,
         keymap.of([indentWithTab]),
+        EditorView.lineWrapping,
         EditorView.theme({
           '.cm-scroller': { fontFamily: '"JetBrains Mono","Fira Code",monospace' },
+          '.cm-content': { wordBreak: 'break-all' },
         }),
         remoteCursorField,
         EditorView.updateListener.of((update) => {
