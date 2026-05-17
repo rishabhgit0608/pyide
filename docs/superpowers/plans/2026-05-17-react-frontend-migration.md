@@ -836,7 +836,7 @@ const INITIAL_CODE = `# Welcome to PyIDE\nname = input("Enter your name: ")\npri
 // Editor exposes { getCode, setCode, dispatch, view } via ref
 // suppressSyncRef is created here and also passed to useSession via editorRef.suppressSyncRef
 const Editor = forwardRef(function Editor(
-  { isInSession, sessionMembers, sendMessage, email, currentDocTitle, onTitleChange },
+  { isInSession, sessionMembers, sendMessage, email },
   ref
 ) {
   const wrapperRef      = useRef(null);
@@ -867,6 +867,12 @@ const Editor = forwardRef(function Editor(
       return ln.from + Math.min(col, ln.length);
     },
     getSessionMembers: () => sessionMembersRef.current,
+    clearCursors: () => {
+      if (!viewRef.current) return;
+      const map = viewRef.current.state.field(remoteCursorField);
+      const effects = [...map.keys()].map(em => removeCursorEffect.of(em));
+      if (effects.length) viewRef.current.dispatch({ effects });
+    },
   }), []);
 
   // Keep a ref to sessionMembers so updateListener closure stays fresh
@@ -926,10 +932,8 @@ const Editor = forwardRef(function Editor(
   }, []); // mount only — intentional empty deps
 
   return (
-    <div id="editor-pane">
-      <div id="editor-label">Code</div>
-      <div id="editor-wrapper" ref={wrapperRef} />
-    </div>
+    // Editor renders only the CM6 wrapper — App.jsx owns the outer #editor-pane shell
+    <div id="editor-wrapper" ref={wrapperRef} />
   );
 });
 
@@ -974,9 +978,6 @@ export function useSession(editorRef, stdinRef, onSessionModal) {
       wsRef.current.send(JSON.stringify(obj));
     }
   }, []);
-
-  // Avatar pulse — ref so we don't re-render on cursor events
-  const memberAvatarPulseRef = useRef(null); // set by Sidebar
 
   useEffect(() => {
     if (!sessionId || !email) return;
@@ -1084,14 +1085,14 @@ export function useSession(editorRef, stdinRef, onSessionModal) {
         case 'session_ended': {
           cleanup();
           onSessionModal('ended');
-          history.replaceState({}, '', window.location.pathname);
+          // URL cleared by SessionModal on dismiss (spec ownership table)
           break;
         }
 
         case 'kicked': {
           cleanup();
           onSessionModal('kicked');
-          history.replaceState({}, '', window.location.pathname);
+          // URL cleared by SessionModal on dismiss (spec ownership table)
           break;
         }
 
@@ -1105,17 +1106,8 @@ export function useSession(editorRef, stdinRef, onSessionModal) {
     function cleanup() {
       setSessionStarted(false);
       setSessionMembers([]);
-      // Clear remote cursors
-      const editor = editorRef.current;
-      if (editor) {
-        const cursors = editor.dispatch; // just need to clear
-        // dispatch remove effects for all cursors via the field
-        try {
-          const map = editor.remoteCursorField
-            ? editorRef.current.dispatch // handled below
-            : null;
-        } catch {}
-      }
+      // Clear all remote cursor decorations via the helper exposed in Editor's useImperativeHandle
+      editorRef.current?.clearCursors();
     }
 
     connect();
@@ -1502,7 +1494,6 @@ export default function App() {
   const [showLobby,     setShowLobby]       = useState(false);
   const [lobbyStatus,   setLobbyStatus]     = useState('');
   const [sessionModal,  setSessionModal]    = useState(null); // 'ended' | 'kicked' | null
-  const [isOwnerState,  setIsOwnerState]    = useState(false);
 
   // Document state
   const { docs, loadDocs, saveDoc, deleteDoc, currentDoc, setCurrentDoc } = useDocuments();
