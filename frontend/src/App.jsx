@@ -3,6 +3,7 @@ import { useApp } from './context/AppContext.jsx';
 import { loadSession, clearSession, saveSession } from './utils.js';
 import { useDocuments } from './hooks/useDocuments.js';
 import { useSession } from './hooks/useSession.js';
+import { useConfirm } from './hooks/useConfirm.js';
 import EmailGate from './components/EmailGate.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import Toolbar from './components/Toolbar.jsx';
@@ -13,6 +14,8 @@ import SaveModal from './components/SaveModal.jsx';
 import ShareModal from './components/ShareModal.jsx';
 import LobbyOverlay from './components/LobbyOverlay.jsx';
 import SessionModal from './components/SessionModal.jsx';
+import ConfirmModal from './components/ConfirmModal.jsx';
+import KeybindingsPanel from './components/KeybindingsPanel.jsx';
 
 // ── Saved toast ────────────────────────────────────────────────
 function SavedToast({ show }) {
@@ -97,6 +100,9 @@ export default function App() {
   const [showLobby,     setShowLobby]       = useState(false);
   const [lobbyStatus,   setLobbyStatus]     = useState('');
   const [sessionModal,  setSessionModal]    = useState(null);
+  const [showKeybindings, setShowKeybindings] = useState(false);
+
+  const { confirmNode, askConfirm } = useConfirm();
 
   // Panel layout state
   // sidebarW: px width of sidebar (null = collapsed)
@@ -112,7 +118,7 @@ export default function App() {
   const toastTimer = useRef(null);
 
   // Document state
-  const { docs, loadDocs, saveDoc, deleteDoc, currentDoc, setCurrentDoc } = useDocuments();
+  const { docs, loadDocs, saveDoc, deleteDoc, currentDoc, setCurrentDoc } = useDocuments(askConfirm);
 
   // Session
   const { sendMessage, runResult, setRunResult } = useSession(
@@ -323,8 +329,14 @@ export default function App() {
   }
 
   // ── Leave session ──────────────────────────────────────────
-  function handleLeave() {
-    if (!confirm('Leave the session?')) return;
+  async function handleLeave() {
+    const ok = await askConfirm({
+      message: 'Leave this session?',
+      detail: 'You can rejoin using the same link.',
+      confirm: 'Leave',
+      danger: true,
+    });
+    if (!ok) return;
     setSessionStarted(false);
     setSessionId(null);
     setIsOwner(false);
@@ -382,6 +394,10 @@ export default function App() {
         setSidebarOpen(!anyOpen);
         setOutputOpen(!anyOpen);
       }
+      if (mod && e.key === 'k')     {
+        e.preventDefault();
+        setShowKeybindings(v => !v);
+      }
     }
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
@@ -432,6 +448,7 @@ export default function App() {
               isOwner={isOwner}
               email={email}
               sendMessage={sendMessage}
+              askConfirm={askConfirm}
             />
           )}
         </div>
@@ -486,7 +503,6 @@ export default function App() {
 
       <div id="statusbar">
         {status}
-        {/* Panel toggle buttons in statusbar */}
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'center' }}>
           <button
             onClick={() => setSidebarOpen(o => !o)}
@@ -498,6 +514,11 @@ export default function App() {
             title="Toggle output (Ctrl+B)"
             style={{ background: 'none', border: 'none', color: outputOpen ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '0 2px' }}
           >⊞ Output</button>
+          <button
+            onClick={() => setShowKeybindings(true)}
+            title="Keyboard shortcuts (Ctrl+K)"
+            style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '0 2px' }}
+          >? Keys</button>
         </span>
       </div>
 
@@ -528,6 +549,14 @@ export default function App() {
 
       {sessionModal && (
         <SessionModal type={sessionModal} onDismiss={handleSessionModalDismiss} />
+      )}
+
+      {confirmNode && (
+        <ConfirmModal {...confirmNode} />
+      )}
+
+      {showKeybindings && (
+        <KeybindingsPanel onClose={() => setShowKeybindings(false)} />
       )}
     </>
   );

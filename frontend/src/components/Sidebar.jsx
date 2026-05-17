@@ -5,7 +5,7 @@ import { formatDate, initials, memberColor } from '../utils.js';
 export default function Sidebar({
   docs, currentDocId, onLoad, onDelete, loadDocs,
   sessionMembers, sessionStarted, isOwner, email,
-  sendMessage,
+  sendMessage, askConfirm,
 }) {
   const { setStatus } = useApp();
 
@@ -19,8 +19,14 @@ export default function Sidebar({
     return () => document.removeEventListener('click', handler);
   }, []);
 
-  function kickMember(memberEmail) {
-    if (!confirm(`Kick ${memberEmail} from the session?`)) return;
+  async function kickMember(memberEmail) {
+    const ok = await askConfirm({
+      message: `Kick ${memberEmail}?`,
+      detail: 'They will be removed from the session immediately.',
+      confirm: 'Kick',
+      danger: true,
+    });
+    if (!ok) return;
     sendMessage({ type: 'kick_member', email: memberEmail });
   }
 

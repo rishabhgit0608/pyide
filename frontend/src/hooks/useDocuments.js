@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useApp } from '../context/AppContext.jsx';
 
-export function useDocuments() {
+export function useDocuments(askConfirm) {
   const { email, setStatus } = useApp();
   const [docs, setDocs]           = useState([]);
   const [currentDoc, setCurrentDoc] = useState(null); // { id, title, code, stdin }
@@ -52,7 +52,13 @@ export function useDocuments() {
   }, [email, currentDoc, loadDocs, setStatus]);
 
   const deleteDoc = useCallback(async (docId) => {
-    if (!confirm('Delete this document?')) return;
+    const ok = await askConfirm({
+      message: 'Delete this document?',
+      detail: 'This action cannot be undone.',
+      confirm: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       const resp = await fetch(`/documents/${docId}`, { method: 'DELETE' });
       if (!resp.ok) throw new Error('Delete failed');
