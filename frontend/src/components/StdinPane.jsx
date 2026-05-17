@@ -1,4 +1,4 @@
-import { useState, useImperativeHandle, forwardRef, useRef } from 'react';
+import { useState, useImperativeHandle, forwardRef, useRef, useEffect } from 'react';
 
 const StdinPane = forwardRef(function StdinPane({ isInSession, sendMessage, email }, ref) {
   const [value, setValue] = useState('');
@@ -8,6 +8,9 @@ const StdinPane = forwardRef(function StdinPane({ isInSession, sendMessage, emai
     getValue: () => value,
     setValue: (v) => setValue(v),
   }), [value]);
+
+  // Clear pending debounce on unmount
+  useEffect(() => () => clearTimeout(timerRef.current), []);
 
   function handleChange(e) {
     const v = e.target.value;

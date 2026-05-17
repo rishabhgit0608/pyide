@@ -151,7 +151,7 @@ export default function App() {
     if (saved) {
       setEmail(saved);
       setStatus('Ready');
-      loadDocs(saved);
+      // loadDocs is triggered by the [email] effect below — no need to call it here
       const sid = new URLSearchParams(window.location.search).get('session');
       if (sid) openLobby(sid, saved);
     } else {
@@ -421,16 +421,12 @@ export default function App() {
         currentDocId={currentDoc?.id}
         sessionStarted={sessionStarted}
         isRunning={isRunning}
-        sidebarOpen={sidebarOpen}
-        outputOpen={outputOpen}
         onRun={handleRun}
         onSave={handleSave}
         onShare={handleShare}
         onLeave={handleLeave}
         onNew={handleNew}
         onChangeEmail={handleChangeEmail}
-        onToggleSidebar={() => setSidebarOpen(o => !o)}
-        onToggleOutput={() => setOutputOpen(o => !o)}
       />
 
       <div id="main" ref={mainRef}>

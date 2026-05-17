@@ -147,7 +147,12 @@ const Editor = forwardRef(function Editor(
       parent: wrapperRef.current,
     });
     viewRef.current = view;
-    return () => { view.destroy(); viewRef.current = null; };
+    return () => {
+      clearTimeout(codeTimerRef.current);
+      clearTimeout(cursorTimerRef.current);
+      view.destroy();
+      viewRef.current = null;
+    };
   }, []); // mount only — intentional empty deps
 
   return (
