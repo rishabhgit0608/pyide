@@ -56,7 +56,7 @@ function DragHandle({ onDrag }) {
     e.preventDefault();
     dragging.current = true;
     function move(e) { if (dragging.current) onDrag(e.clientX); }
-    function up()   { dragging.current = false; window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); }
+    function up() { dragging.current = false; window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); }
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
   }
@@ -91,15 +91,15 @@ export default function App() {
 
   // Shared imperative refs
   const editorRef = useRef(null);
-  const stdinRef  = useRef(null);
+  const stdinRef = useRef(null);
 
   // UI state
-  const [showSaveModal, setShowSaveModal]   = useState(false);
-  const [saveModalCb,   setSaveModalCb]     = useState(null);
-  const [shareLink,     setShareLink]       = useState('');
-  const [showLobby,     setShowLobby]       = useState(false);
-  const [lobbyStatus,   setLobbyStatus]     = useState('');
-  const [sessionModal,  setSessionModal]    = useState(null);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saveModalCb, setSaveModalCb] = useState(null);
+  const [shareLink, setShareLink] = useState('');
+  const [showLobby, setShowLobby] = useState(false);
+  const [lobbyStatus, setLobbyStatus] = useState('');
+  const [sessionModal, setSessionModal] = useState(null);
   const [showKeybindings, setShowKeybindings] = useState(false);
 
   const { confirmNode, askConfirm } = useConfirm();
@@ -107,14 +107,14 @@ export default function App() {
   // Panel layout state
   // sidebarW: px width of sidebar (null = collapsed)
   // outputW: px width of output pane (null = collapsed)
-  const [sidebarW,   setSidebarW]   = useState(220);
-  const [outputW,    setOutputW]    = useState(null); // start: auto (percentage via CSS)
+  const [sidebarW, setSidebarW] = useState(220);
+  const [outputW, setOutputW] = useState(null); // start: auto (percentage via CSS)
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [outputOpen,  setOutputOpen]  = useState(true);
+  const [outputOpen, setOutputOpen] = useState(true);
   const mainRef = useRef(null);
 
   // Auto-save toast
-  const [showToast,  setShowToast]  = useState(false);
+  const [showToast, setShowToast] = useState(false);
   const toastTimer = useRef(null);
 
   // Document state
@@ -136,13 +136,13 @@ export default function App() {
   // body.locked management
   useEffect(() => {
     if (email) document.body.classList.remove('locked');
-    else       document.body.classList.add('locked');
+    else document.body.classList.add('locked');
   }, [email]);
 
   // body.running management
   useEffect(() => {
     if (isRunning) document.body.classList.add('running');
-    else           document.body.classList.remove('running');
+    else document.body.classList.remove('running');
   }, [isRunning]);
 
   // Init: restore session from localStorage, check URL
@@ -165,10 +165,10 @@ export default function App() {
   }, [email]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auto-save every 5 s (only when content changed) ──────────
-  const currentDocRef   = useRef(currentDoc);
-  const emailRef        = useRef(email);
+  const currentDocRef = useRef(currentDoc);
+  const emailRef = useRef(email);
   // Snapshot of what was last successfully saved — compared before each auto-save
-  const lastSavedRef    = useRef({ code: null, stdin: null, title: null });
+  const lastSavedRef = useRef({ code: null, stdin: null, title: null });
 
   useEffect(() => { currentDocRef.current = currentDoc; }, [currentDoc]);
   useEffect(() => { emailRef.current = email; }, [email]);
@@ -181,10 +181,10 @@ export default function App() {
   useEffect(() => {
     const id = setInterval(async () => {
       const doc = currentDocRef.current;
-      const em  = emailRef.current;
+      const em = emailRef.current;
       if (!em || !doc?.id) return; // only auto-save existing docs
 
-      const code  = editorRef.current?.getCode() ?? '';
+      const code = editorRef.current?.getCode() ?? '';
       const stdin = stdinRef.current?.getValue() ?? '';
       const title = doc.title || 'Untitled';
 
@@ -199,7 +199,7 @@ export default function App() {
         setShowToast(true);
         toastTimer.current = setTimeout(() => setShowToast(false), 2000);
       }
-    }, 5000);
+    }, 20000);
     return () => clearInterval(id);
   }, [saveDoc]);
 
@@ -257,7 +257,7 @@ export default function App() {
 
   // ── Run ────────────────────────────────────────────────────
   async function handleRun() {
-    const code  = editorRef.current?.getCode() ?? '';
+    const code = editorRef.current?.getCode() ?? '';
     const stdin = stdinRef.current?.getValue() ?? '';
     setRunResult(null);
     setIsRunning(true);
@@ -286,7 +286,7 @@ export default function App() {
   // ── Save ───────────────────────────────────────────────────
   async function handleSave() {
     if (!email) return;
-    const code  = editorRef.current?.getCode() ?? '';
+    const code = editorRef.current?.getCode() ?? '';
     const stdin = stdinRef.current?.getValue() ?? '';
     const title = currentDoc?.title || '';
 
@@ -387,14 +387,14 @@ export default function App() {
     function handler(e) {
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key === 'Enter') { e.preventDefault(); handleRun(); }
-      if (mod && e.key === 's')     { e.preventDefault(); handleSave(); }
-      if (mod && e.key === 'b')     {
+      if (mod && e.key === 's') { e.preventDefault(); handleSave(); }
+      if (mod && e.key === 'b') {
         e.preventDefault();
         const anyOpen = sidebarOpen || outputOpen;
         setSidebarOpen(!anyOpen);
         setOutputOpen(!anyOpen);
       }
-      if (mod && e.key === 'k')     {
+      if (mod && e.key === 'k') {
         e.preventDefault();
         setShowKeybindings(v => !v);
       }
