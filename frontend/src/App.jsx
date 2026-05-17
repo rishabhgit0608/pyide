@@ -158,29 +158,43 @@ export default function App() {
     if (email) loadDocs(email);
   }, [email]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Auto-save every 5 s ────────────────────────────────────
-  const autoSaveRef = useRef(null);
-  const currentDocRef = useRef(currentDoc);
-  const emailRef = useRef(email);
+  // ── Auto-save every 5 s (only when content changed) ──────────
+  const currentDocRef   = useRef(currentDoc);
+  const emailRef        = useRef(email);
+  // Snapshot of what was last successfully saved — compared before each auto-save
+  const lastSavedRef    = useRef({ code: null, stdin: null, title: null });
+
   useEffect(() => { currentDocRef.current = currentDoc; }, [currentDoc]);
   useEffect(() => { emailRef.current = email; }, [email]);
 
+  // When a doc is loaded, seed lastSavedRef so we don't immediately re-save it
+  function seedLastSaved(code, stdin, title) {
+    lastSavedRef.current = { code, stdin, title: title || 'Untitled' };
+  }
+
   useEffect(() => {
-    autoSaveRef.current = setInterval(async () => {
-      const doc  = currentDocRef.current;
-      const em   = emailRef.current;
-      if (!em || !doc?.id) return; // only save existing docs
+    const id = setInterval(async () => {
+      const doc = currentDocRef.current;
+      const em  = emailRef.current;
+      if (!em || !doc?.id) return; // only auto-save existing docs
+
       const code  = editorRef.current?.getCode() ?? '';
       const stdin = stdinRef.current?.getValue() ?? '';
       const title = doc.title || 'Untitled';
+
+      // Skip if nothing changed since last save
+      const last = lastSavedRef.current;
+      if (code === last.code && stdin === last.stdin && title === last.title) return;
+
       const result = await saveDoc(title, code, stdin);
       if (result) {
+        lastSavedRef.current = { code, stdin, title };
         clearTimeout(toastTimer.current);
         setShowToast(true);
         toastTimer.current = setTimeout(() => setShowToast(false), 2000);
       }
     }, 5000);
-    return () => clearInterval(autoSaveRef.current);
+    return () => clearInterval(id);
   }, [saveDoc]);
 
   // ── Lobby ──────────────────────────────────────────────────
@@ -273,6 +287,7 @@ export default function App() {
     if (currentDoc?.id) {
       const result = await saveDoc(title || 'Untitled', code, stdin);
       if (result) {
+        lastSavedRef.current = { code, stdin, title: title || 'Untitled' };
         clearTimeout(toastTimer.current);
         setShowToast(true);
         toastTimer.current = setTimeout(() => setShowToast(false), 2000);
@@ -295,6 +310,7 @@ export default function App() {
     setCurrentDoc({ id: doc.id, title: doc.title, code: doc.code, stdin: doc.stdin || '' });
     editorRef.current?.setCode(doc.code);
     stdinRef.current?.setValue(doc.stdin || '');
+    seedLastSaved(doc.code, doc.stdin || '', doc.title);
     setStatus(`Loaded: ${doc.title}`);
   }
 
