@@ -32,6 +32,10 @@
       overflow: hidden;
     }
 
+    #root {
+      display: contents;
+    }
+
     /* ── Locked state ─────────────────────────────── */
     body.locked #main,
     body.locked #statusbar,
