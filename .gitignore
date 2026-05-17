@@ -8,3 +8,4 @@ bundler/node_modules/
 bundler/package-lock.json
 frontend/dist/
 node_modules/
+frontend/index.html.bak
