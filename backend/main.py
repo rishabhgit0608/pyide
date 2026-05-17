@@ -374,6 +374,6 @@ async def ws_session(websocket: WebSocket, session_id: str, email: str):
                 sessions.pop(state.session_id, None)
 
 
-_frontend = pathlib.Path(__file__).parent.parent / "frontend"
+_frontend = pathlib.Path(__file__).parent.parent / "frontend" / "dist"
 if _frontend.exists():
     app.mount("/", StaticFiles(directory=_frontend, html=True), name="frontend")
