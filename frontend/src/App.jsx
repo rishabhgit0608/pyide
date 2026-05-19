@@ -145,6 +145,11 @@ export default function App() {
     else document.body.classList.remove('running');
   }, [isRunning]);
 
+  // Close lobby when session actually starts
+  useEffect(() => {
+    if (sessionStarted) setShowLobby(false);
+  }, [sessionStarted]);
+
   // Init: restore session from localStorage, check URL
   useEffect(() => {
     const saved = loadSession();
