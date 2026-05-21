@@ -1,50 +1,67 @@
-# PyIDE — Python Online IDE
+# PyIDE — Collaborative Python IDE in the Browser
 
-A lightweight, self-hosted Python code editor with cloud document saving via MongoDB.
-No accounts, no authentication — your email is your identity.
+Collaborate on Python code in real-time — no accounts, no setup. Enter your email, share a session link, and start coding together instantly.
 
-## Prerequisites
+**Live demo:**  https://pyide-9c0o.onrender.com/
 
-- Python 3.11+
-- MongoDB running locally (or Atlas URI)
+---
 
-## Setup
+## What It Does
 
-1. Install backend dependencies:
-   ```bash
-   cd python-ide/backend
-   pip install -r requirements.txt
-   ```
+- **Real-time collaboration** — multiple users edit the same file simultaneously, with live cursors and presence indicators
+- **Run Python in the browser** — executes on the server, streams stdout/stderr back instantly
+- **Zero-friction identity** — your email is your identity. No passwords, no OAuth, no verification
+- **Persistent documents** — files are saved to MongoDB and scoped to your email, accessible from any device
+- **Session management** — create a session, invite collaborators via link, kick members if needed
 
-2. Configure environment:
-   ```bash
-   cp .env.example .env
-   # Edit .env if using Atlas: set MONGO_URI=mongodb+srv://...
-   ```
+## Tech Stack
 
-## Running
+| Layer | Technology |
+|-------|-----------|
+| Editor | CodeMirror 6 |
+| Frontend | Vanilla JS, HTML/CSS |
+| Backend | FastAPI (Python) |
+| Realtime | WebSockets |
+| Database | MongoDB (local or Atlas) |
+| Deployment | Render |
 
-1. Start MongoDB (if local):
-   ```bash
-   mongod --dbpath /your/data/path
-   ```
+## Architecture
 
-2. Start the backend:
-   ```bash
-   cd python-ide/backend
-   uvicorn main:app --reload --port 8000
-   ```
+```
+Browser (CodeMirror 6)
+    │
+    ├── HTTP  →  FastAPI  →  MongoDB    (documents, CRUD)
+    │
+    └── WS    →  FastAPI  →  SessionState (in-memory, real-time collab)
+                   │
+                   └── broadcasts cursor positions + code changes to all peers
+```
 
-3. Open the frontend:
-   - Open `python-ide/frontend/index.html` directly in your browser, **or**
-   - Serve it: `python3 -m http.server 3000 --directory frontend/` then visit `http://localhost:3000`
+- Sessions are ephemeral (in-memory). Documents are persistent (MongoDB).
+- Code execution uses `asyncio.create_subprocess_exec` with a 10s timeout and 100KB output cap.
+- Session cleanup runs on a background task; idle sessions are purged automatically.
 
-## How It Works
+## Local Setup
 
-- **Email as identity:** Type your email in the top bar. All documents are scoped to that email. No password, no verification — intended for personal/local use.
-- **Run:** Executes Python 3 on the server using `asyncio.create_subprocess_exec`. Stdin is passed directly. Timeout: 10 seconds. Max output: 100KB.
-- **Save:** Creates a new document (first save) or updates the existing one. Title can be set in the title bar or prompted on first save.
-- **Documents:** Stored in MongoDB collection `documents`. Indexed by email.
+**Prerequisites:** Python 3.11+, MongoDB
+
+```bash
+# 1. Clone and install
+git clone https://github.com/rishabhgit0608/pyide
+cd pyide/backend
+pip install -r requirements.txt
+
+# 2. Configure
+cp .env.example .env
+# For MongoDB Atlas: set MONGO_URI=mongodb+srv://...
+
+# 3. Start MongoDB (if local)
+mongod --dbpath /your/data/path
+
+# 4. Run
+uvicorn main:app --reload --port 8000
+# App served at http://localhost:8000
+```
 
 ## Keyboard Shortcuts
 
@@ -54,21 +71,24 @@ No accounts, no authentication — your email is your identity.
 | `Ctrl+S` / `Cmd+S` | Save document |
 | `Tab` | Indent (4 spaces) |
 
-## API
+## API Reference
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/run` | Execute code |
-| POST | `/documents` | Create document |
-| GET | `/documents/{email}` | List documents by email |
-| PUT | `/documents/{doc_id}` | Update document |
-| DELETE | `/documents/{doc_id}` | Delete document |
+| `POST` | `/run` | Execute Python code |
+| `POST` | `/sessions` | Create a collaboration session |
+| `GET` | `/sessions/{id}` | Get session state |
+| `WS` | `/ws/{session_id}/{email}` | Join session via WebSocket |
+| `POST` | `/documents` | Create document |
+| `GET` | `/documents/{email}` | List documents for email |
+| `PUT` | `/documents/{doc_id}` | Update document |
+| `DELETE` | `/documents/{doc_id}` | Delete document |
 
 ## Running Tests
 
 ```bash
-cd python-ide/backend
+cd backend
 python3 -m pytest tests/ -v
 ```
 
-> Tests for document CRUD require MongoDB to be running.
+> Integration tests require a running MongoDB instance.
